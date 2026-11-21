@@ -1,0 +1,341 @@
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import http from 'node:http'
+import net from 'node:net'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import WebSocket from 'ws'
+import { defaultConfig, type AppConfig, type CameraDashboard, type LightsDashboard } from '../../src/config/schema.js'
+import { ConfigStore } from '../../src/config/store.js'
+import { DeviceLink } from '../../src/device/link.js'
+import { startEditorServer, type LiveMessage } from '../../src/editor/server.js'
+import { Actions } from '../../src/ha/actions.js'
+import { CameraImageError } from '../../src/ha/types.js'
+import type { Logger } from '../../src/log.js'
+import { Navigator, type DevicePort } from '../../src/navigator.js'
+import { FakeHa } from '../fakes/fake-ha.js'
+
+const silent: Logger = { debug() {}, info() {}, warn() {}, error() {} }
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+class StubDevice implements DevicePort {
+  present = vi.fn()
+  setLed = vi.fn()
+  onInput() { return () => {} }
+  onStatus() { return () => {} }
+}
+
+type Editor = Awaited<ReturnType<typeof startEditorServer>>
+
+describe('serveur de l’éditeur', () => {
+  let dir: string
+  let store: ConfigStore
+  let ha: FakeHa
+  let actions: Actions
+  let nav: Navigator | null
+  let link: DeviceLink
+  let editor: Editor | undefined
+  let statics: string
+
+  const start = async (staticDir = statics) => {
+    editor = await startEditorServer({
+      store, ha: () => ha, navigator: () => nav, device: () => link, port: 0, staticDir, log: silent,
+    })
+    return editor
+  }
+  const ed = (): Editor => editor!
+  const port = () => Number(new URL(ed().url).port)
+  const hostHeader = () => ({ host: `127.0.0.1:${port()}` })
+  /** Vraie requête HTTP (fastify.inject ne se charge pas sous vmThreads) ; l'en-tête Host est modifiable. */
+  const request = (method: string, url: string, o: { headers?: Record<string, string>; payload?: unknown } = {}) =>
+    new Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; rawPayload: Buffer; body: string; json: () => any }>((resolve, reject) => {
+      const data = o.payload === undefined ? null : typeof o.payload === 'string' ? o.payload : JSON.stringify(o.payload)
+      const headers: Record<string, string> = { ...(o.headers ?? hostHeader()) }
+      if (data !== null) headers['content-type'] ??= 'application/json'
+      const req = http.request({ host: '127.0.0.1', port: port(), method, path: url, headers, setHost: false }, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c: Buffer) => chunks.push(c))
+        res.on('end', () => {
+          const raw = Buffer.concat(chunks)
+          resolve({ statusCode: res.statusCode ?? 0, headers: res.headers, rawPayload: raw, body: raw.toString('utf8'), json: () => JSON.parse(raw.toString('utf8')) })
+        })
+      })
+      req.on('error', reject)
+      req.end(data)
+    })
+  const put = (payload: unknown) => request('PUT', '/api/config', { payload })
+  const post = (url: string) => request('POST', url)
+  const get = (url: string, headers: Record<string, string> = hostHeader()) => request('GET', url, { headers })
+  const body = (cfg: AppConfig, extra: object = {}) => {
+    const { ha: h, ...rest } = structuredClone(cfg)
+    return { ...rest, ha: { url: h.url, allowSelfSigned: h.allowSelfSigned }, ...extra }
+  }
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lha-editor-'))
+    statics = path.join(dir, 'dist')
+    store = await ConfigStore.open(dir, silent)
+    const cfg = structuredClone(store.get())
+    cfg.ha.token = 'SECRET123'
+    await store.update(cfg)
+    ha = new FakeHa()
+    actions = new Actions({ ha, feedback: () => {} })
+    link = new DeviceLink({ createDevice: async () => { throw new Error('inutilisé') }, log: silent })
+    nav = new Navigator({
+      device: new StubDevice(), ha, actions,
+      state: { activeButton: () => 0, setActiveButton: async () => {} } as never,
+    })
+    nav.applyConfig(store.get())
+  })
+
+  afterEach(async () => {
+    await editor?.close()
+    editor = undefined
+    nav?.dispose()
+    actions.dispose()
+    await fs.rm(dir, { recursive: true, force: true })
+  })
+
+  it('listens_localhost_only', async () => {
+    await start()
+    await expect(new Promise<void>((resolve, reject) => {
+      const s = net.connect({ host: '::1', port: port() })
+      s.on('connect', () => { s.destroy(); resolve() })
+      s.on('error', reject)
+    })).rejects.toBeDefined()
+    expect(ed().url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+  })
+
+  it('rejects_foreign_host', async () => {
+    await start()
+    for (const host of ['evil.example', `evil.example:${port()}`, '127.0.0.1:1', `[::1]:${port()}`]) {
+      expect((await get('/api/status', { host })).statusCode, host).toBe(403)
+    }
+    expect((await get('/api/status', { host: `127.0.0.1:${port()}` })).statusCode).toBe(200)
+    expect((await get('/api/status', { host: `localhost:${port()}` })).statusCode).toBe(200)
+  })
+
+  it('rejects_foreign_host_on_websocket_upgrade', async () => {
+    await start()
+    const ws = new WebSocket(`ws://127.0.0.1:${port()}/api/live`, { headers: { host: 'evil.example' } })
+    const code = await new Promise<number>((resolve) => {
+      ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0))
+      ws.on('open', () => resolve(101))
+      ws.on('error', () => {})
+    })
+    expect(code).toBe(403)
+  })
+
+  it('config_redacts_token', async () => {
+    await start()
+    const res = await get('/api/config')
+    expect(res.statusCode).toBe(200)
+    expect(res.body).not.toContain('SECRET123')
+    const cfg = res.json()
+    expect(cfg.ha).toEqual({ url: store.get().ha.url, allowSelfSigned: false, hasToken: true })
+    expect(cfg.loadWarning).toBeNull()
+    expect(cfg.buttons).toHaveLength(8)
+  })
+
+  it('put_keeps_token_when_absent', async () => {
+    await start()
+    let res = await put(body(store.get()))
+    expect(res.statusCode).toBe(200)
+    expect(res.body).not.toContain('SECRET123')
+    expect(store.get().ha.token).toBe('SECRET123')
+    res = await put(body(store.get(), { newToken: '' }))
+    expect(store.get().ha.token).toBe('SECRET123')
+    res = await put(body(store.get(), { newToken: '  NEW ' }))
+    expect(res.statusCode).toBe(200)
+    expect(store.get().ha.token).toBe('NEW')
+    expect(res.body).not.toContain('NEW')
+    expect(res.json().ha.hasToken).toBe(true)
+  })
+
+  it('put_rejects_token_field', async () => {
+    await start()
+    const b = body(store.get())
+    const res = await put({ ...b, ha: { ...b.ha, token: 'x' } })
+    expect(res.statusCode).toBe(400)
+    expect(store.get().ha.token).toBe('SECRET123')
+  })
+
+  it('put_invalid_400', async () => {
+    await start()
+    const res = await put(body(store.get(), { buttons: [] }))
+    expect(res.statusCode).toBe(400)
+    expect(res.json().issues.length).toBeGreaterThan(0)
+    const bad = await request('PUT', '/api/config', { payload: '[1]' })
+    expect(bad.statusCode).toBe(400)
+  })
+
+  it('put_placement_400', async () => {
+    await start()
+    ha.setEntity('light.lampe', 'on', { supported_color_modes: ['onoff'] })
+    const cfg = structuredClone(store.get())
+    ;(cfg.buttons[0] as LightsDashboard).dimmers.knobTL = { entityId: 'light.lampe' }
+    const res = await put(body(cfg))
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toContain("n'est pas gradable")
+    expect(store.get().buttons[0]).toEqual(defaultConfig().buttons[0])
+    // Entité inconnue de HA : acceptée.
+    const unknown = structuredClone(store.get())
+    ;(unknown.buttons[0] as LightsDashboard).dimmers.knobTL = { entityId: 'light.inconnue' }
+    expect((await put(body(unknown))).statusCode).toBe(200)
+    // Mauvais domaine sur une touche.
+    ha.setEntity('sensor.t', '20', { device_class: 'temperature' })
+    const wrong = structuredClone(store.get())
+    ;(wrong.buttons[0] as LightsDashboard).keys[0] = { entityId: 'sensor.t' }
+    expect((await put(body(wrong))).statusCode).toBe(400)
+  })
+
+  it('undo_flow', async () => {
+    await start()
+    const cfg = structuredClone(store.get())
+    cfg.device.brightness = 0.5
+    expect((await put(body(cfg))).statusCode).toBe(200)
+    const undo = await post('/api/config/undo')
+    expect(undo.statusCode).toBe(200)
+    expect(undo.json().device.brightness).toBe(1)
+    while (await store.undo()) { /* vide l'historique (dont la mise en place du jeton) */ }
+    const again = await post('/api/config/undo')
+    expect(again.statusCode).toBe(409)
+    expect(again.json()).toEqual({ error: 'Rien à annuler' })
+  })
+
+  it('entities_sorted_and_offline_503', async () => {
+    await start()
+    ha.setStatus({ state: 'offline', reason: 'network' })
+    const off = await get('/api/entities')
+    expect(off.statusCode).toBe(503)
+    expect(off.json()).toEqual({ error: 'Home Assistant hors ligne' })
+    ha.setStatus({ state: 'online', reason: null })
+    ha.setEntity('light.b', 'on', { friendly_name: 'Zèbre' })
+    ha.setEntity('light.a', 'on', { friendly_name: 'Abeille' })
+    const ok = await get('/api/entities')
+    expect(ok.statusCode).toBe(200)
+    expect(ok.json().map((e: { name: string }) => e.name)).toEqual(['Abeille', 'Zèbre'])
+  })
+
+  it('preview_png', async () => {
+    await start()
+    const res = await get('/api/preview/0.png')
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+    expect(res.headers['cache-control']).toBe('no-store')
+    expect(res.rawPayload.subarray(0, 8).equals(PNG_SIGNATURE)).toBe(true)
+    expect((await get('/api/preview/7.png')).statusCode).toBe(404)
+    expect((await get('/api/preview/9.png')).statusCode).toBe(404)
+  })
+
+  it('preview_503_during_switch', async () => {
+    await start()
+    const saved = nav
+    nav = null
+    const res = await get('/api/preview/0.png')
+    expect(res.statusCode).toBe(503)
+    expect(res.json()).toEqual({ error: 'Console en cours de reconnexion' })
+    expect((await get('/api/status')).json().activeButton).toBe(-1)
+    nav = saved
+  })
+
+  it('preview_camera_still_cached_and_refreshed', async () => {
+    const cfg = structuredClone(store.get())
+    ;(cfg.buttons[4] as CameraDashboard).entityId = 'camera.salon'
+    await store.update(cfg)
+    nav!.applyConfig(store.get())
+    await start()
+    const fetchSpy = vi.spyOn(ha, 'fetchCameraImage')
+    expect((await get('/api/preview/4.png')).statusCode).toBe(200)
+    expect((await get('/api/preview/4.png')).statusCode).toBe(200)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith('camera.salon', { width: 480, height: 270 })
+    await get('/api/preview/4.png?refreshCamera=1')
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    // Échec : on dessine tout de même la vue telle quelle.
+    ha.cameraImage = new CameraImageError('boom')
+    const res = await get('/api/preview/4.png?refreshCamera=1')
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+  })
+
+  it('status_shape', async () => {
+    await start()
+    const res = await get('/api/status')
+    expect(res.json()).toEqual({
+      device: { status: 'disconnected', firmware: null },
+      ha: { state: 'online', reason: null },
+      activeButton: 0,
+    })
+  })
+
+  it('serves_placeholder_when_not_built_and_static_with_spa_fallback', async () => {
+    await start()
+    const page = await get('/')
+    expect(page.statusCode).toBe(200)
+    expect(page.headers['content-type']).toContain('text/html')
+    expect(page.body).toContain('Éditeur non compilé')
+    expect(page.body).toContain('pnpm run editor:build')
+    await ed().close()
+
+    await fs.mkdir(path.join(statics, 'assets'), { recursive: true })
+    await fs.writeFile(path.join(statics, 'index.html'), '<html>EDITEUR</html>')
+    await fs.writeFile(path.join(statics, 'assets', 'a.js'), 'console.log(1)')
+    await start()
+    expect((await get('/')).body).toContain('EDITEUR')
+    expect((await get('/assets/a.js')).body).toBe('console.log(1)')
+    expect((await get('/tableaux/3')).body).toContain('EDITEUR')
+    expect((await get('/api/inconnu')).statusCode).toBe(404)
+  })
+
+  describe('/api/live', () => {
+    const open = async () => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port()}/api/live`)
+      const messages: LiveMessage[] = []
+      const waiters: ((m: LiveMessage) => void)[] = []
+      ws.on('message', (data) => {
+        const m = JSON.parse(String(data)) as LiveMessage
+        const w = waiters.shift()
+        if (w) w(m)
+        else messages.push(m)
+      })
+      await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+      return {
+        ws,
+        next: () => (messages.length ? Promise.resolve(messages.shift()!) : new Promise<LiveMessage>((r) => waiters.push(r))),
+      }
+    }
+
+    it('live_pushes_config', async () => {
+      await start()
+      const c = await open()
+      const off = store.onChange(() => ed().notify({ type: 'config' })) // app.ts joue ce rôle
+      const next = c.next()
+      const cfg = structuredClone(store.get())
+      cfg.device.brightness = 0.4
+      await store.update(cfg)
+      expect(await next).toEqual({ type: 'config' })
+      off()
+      c.ws.close()
+    })
+
+    it('live_pushes_active', async () => {
+      await start()
+      const c = await open()
+      const off = nav!.onActiveChange((button) => ed().notify({ type: 'active', button }))
+      const next = c.next()
+      nav!.handle({ type: 'button', id: 2 })
+      expect(await next).toEqual({ type: 'active', button: 2 })
+      off()
+      c.ws.close()
+    })
+
+    it('close_terminates_clients', async () => {
+      await start()
+      const c = await open()
+      const closed = new Promise<void>((r) => c.ws.on('close', () => r()))
+      await ed().close()
+      await closed
+    })
+  })
+})

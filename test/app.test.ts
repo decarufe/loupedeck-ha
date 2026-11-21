@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
+import net from 'node:net'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type App, type AppDeps } from '../src/app.js'
-import { emptyDashboard, type AppConfig, type LightsDashboard } from '../src/config/schema.js'
+import { defaultConfig, emptyDashboard, type AppConfig, type LightsDashboard } from '../src/config/schema.js'
 import type { HaPort } from '../src/ha/types.js'
 import { FakeDevice } from './fakes/fake-device.js'
 import { FakeHa } from './fakes/fake-ha.js'
@@ -199,6 +200,36 @@ describe('createApp', () => {
     expect(vi.getTimerCount()).toBe(0)
     expect(close).toHaveBeenCalled()
     expect(devices[0]!.callsOf('close').length).toBeGreaterThan(0)
+  })
+
+  it("démarre l'éditeur sur le port configuré, annonce les changements et le referme à l'arrêt", async () => {
+    const free = await new Promise<number>((resolve) => {
+      const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)) })
+    })
+    const cfg = defaultConfig()
+    cfg.editor.port = free
+    await fs.writeFile(path.join(dir, 'config.json'), JSON.stringify(cfg))
+    const a = (app = await createApp({ ...deps(), startEditor: true, editorStaticDir: path.join(dir, 'absent') }))
+    await settle()
+    expect(a.editorUrl).toBe(`http://127.0.0.1:${free}`)
+    const messages: unknown[] = []
+    const { default: WebSocket } = await import('ws')
+    const ws = new WebSocket(`ws://127.0.0.1:${free}/api/live`)
+    ws.on('message', (m) => messages.push(JSON.parse(String(m))))
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    await a.store.update(withChange(a, (c) => { c.device.brightness = 0.5 }))
+    has[0]!.setStatus({ state: 'offline', reason: 'network' })
+    has[0]!.setStatus({ state: 'online', reason: null })
+    await new Promise<void>((r) => setImmediate(r))
+    await vi.waitFor(() => expect(messages).toEqual(expect.arrayContaining([{ type: 'config' }, { type: 'status' }, { type: 'entities' }])))
+    await a.stop()
+    app = null
+    await new Promise<void>((resolve, reject) => {
+      const s = net.connect({ host: '127.0.0.1', port: free })
+      s.on('connect', () => { s.destroy(); reject(new Error('le port est resté ouvert')) })
+      s.on('error', () => resolve())
+    })
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('rejette si la configuration ne peut pas être ouverte, sans rien démarrer', async () => {

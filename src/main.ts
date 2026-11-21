@@ -39,7 +39,7 @@ secrets.remember(cfg.ha.token)
 app.store.onChange((next) => secrets.remember(next.ha.token))
 log.info('Loupedeck HA démarré', { configuration: path.join(configDir, 'config.json') })
 log.info('Home Assistant', { url: cfg.ha.url, jeton: cfg.ha.token.trim() ? 'configuré' : 'absent' })
-log.info('Éditeur : disponible dans une prochaine version')
+if (app.editorUrl) log.info('Éditeur', { url: app.editorUrl })
 
 let stopping = false
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
