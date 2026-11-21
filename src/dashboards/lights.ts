@@ -52,7 +52,7 @@ export function createLightsDashboard(cfg: LightsDashboard, d: DashboardDeps): D
         keys: Array.from({ length: KEY_COUNT }, (_, i) => tile(cfg.keys[i] ?? null)),
         left: [0, 1, 2].map(z => tile(dimmerSlot('left', z))),
         right: [0, 1, 2].map(z => tile(dimmerSlot('right', z))),
-        offline: d.ha.status().state === 'offline',
+        offline: d.ha.status().state !== 'online',
       }
     },
 

@@ -152,6 +152,10 @@ describe('tableau Lumières', () => {
     expect(grid(make()).offline).toBe(false)
     ha.setStatus({ state: 'offline', reason: 'network' })
     expect(grid(make()).offline).toBe(true)
+    ha.setStatus({ state: 'connecting', reason: null })
+    expect(grid(make()).offline).toBe(true)
+    ha.setStatus({ state: 'online', reason: null })
+    expect(grid(make()).offline).toBe(false)
   })
 
   it('rerender_on_entities', () => {
