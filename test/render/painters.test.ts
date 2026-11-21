@@ -100,3 +100,33 @@ describe('painters', () => {
     expect(lit).toBeGreaterThan(100)
   })
 })
+
+describe('painters (corrections)', () => {
+  it('missing_tile_uses_unavailable_background', async () => {
+    const s = createSurface()
+    await paint(s, withKey0(tile({ state: 'missing' })))
+    expect(px(s, 64, 4)).toEqual([0x3a, 0x3a, 0x3a])
+  })
+  it('key_tile_has_no_level_bar', async () => {
+    const s = createSurface()
+    await paint(s, withKey0(tile({ level: 0.6 })))
+    expect(px(s, 64, 87)).toEqual([255, 179, 0])
+    expect(px(s, 70, 87)).toEqual([255, 179, 0])
+  })
+  it('strip_bar_ends_at_round_level_52', async () => {
+    const s = createSurface()
+    await paint(s, grid({ left: [EMPTY_TILE, tile({ level: 0.6 }), EMPTY_TILE] }))
+    expect(px(s, 4 + 30, 177)).toEqual([255, 255, 255])
+    expect(px(s, 4 + 31, 177)).not.toEqual([255, 255, 255])
+  })
+  it('full_image_with_message_draws_no_text', async () => {
+    const withMsg = createSurface()
+    const without = createSurface()
+    const image = redJpeg()
+    await paint(withMsg, { kind: 'full', image, message: 'Texte', stale: false, offline: false })
+    await paint(without, { kind: 'full', image, message: null, stale: false, offline: false })
+    const a = withMsg.ctx.getImageData(0, 240, 480, 30).data
+    const b = without.ctx.getImageData(0, 240, 480, 30).data
+    expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true)
+  })
+})

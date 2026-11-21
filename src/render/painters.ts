@@ -73,7 +73,7 @@ function paintTile(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): 
     ctx.fillRect(r.x, r.y, r.width, r.height)
     return
   }
-  const bg = t.state === 'on' ? t.accent : t.state === 'unavailable' ? COLORS.unavailable : COLORS.off
+  const bg = t.state === 'on' ? t.accent : t.state === 'unavailable' || t.state === 'missing' ? COLORS.unavailable : COLORS.off
   ctx.fillStyle = bg
   ctx.fillRect(r.x, r.y, r.width, r.height)
 
@@ -89,7 +89,7 @@ function paintTile(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): 
   if (t.label) drawText(ctx, t.label, cx, labelY, maxW, `${compact ? 10 : 12}px ${FONT}`, fg, 'center')
   if (t.valueText) drawText(ctx, t.valueText, cx, labelY + (compact ? 14 : 17), maxW, `bold ${compact ? 12 : 14}px ${FONT}`, fg, 'center')
 
-  if (t.level !== null) {
+  if (compact && t.level !== null) {
     const full = r.width - 8
     const by = r.y + r.height - 6
     ctx.fillStyle = 'rgba(0,0,0,0.45)'
@@ -186,8 +186,6 @@ async function paintFull(s: Surface, v: FullView): Promise<void> {
 
   if (!drawn) {
     drawText(ctx, v.message ?? 'Image non disponible', SCREEN.width / 2, SCREEN.height / 2, 440, `18px ${FONT}`, '#FFFFFF', 'center')
-  } else if (v.message) {
-    drawText(ctx, v.message, SCREEN.width / 2, SCREEN.height - 16, 440, `14px ${FONT}`, '#FFFFFF', 'center')
   }
   if (v.stale || v.offline) desaturate(s)
 }
