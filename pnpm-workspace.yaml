@@ -1,3 +1,5 @@
+packages:
+  - 'editor'
 allowBuilds:
   '@serialport/bindings-cpp': true
   esbuild: true

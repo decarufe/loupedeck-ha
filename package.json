@@ -7,10 +7,12 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p .",
+    "build": "tsc -p . && pnpm run editor:build",
+    "editor:dev": "pnpm --dir editor run dev",
+    "editor:build": "pnpm --dir editor run build",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
-    "test": "vitest run",
+    "test": "vitest run && pnpm --dir editor run test",
     "spike": "tsx scripts/spike-throughput.ts"
   },
   "dependencies": {
