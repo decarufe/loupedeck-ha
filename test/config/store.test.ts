@@ -119,6 +119,48 @@ describe('ConfigStore', () => {
     expect(await s.undo()).toBe(false)
   })
 
+  it('concurrent_updates_keep_a_coherent_history', async () => {
+    const s = await ConfigStore.open(dir, log)
+    const c0 = s.get()
+    const c1 = withUrl(c0, 'http://one:1')
+    const c2 = withUrl(c0, 'http://two:2')
+    await Promise.all([s.update(c1), s.update(c2)])
+    // Appliquées dans l'ordre d'appel : la dernière gagne, en mémoire comme sur disque.
+    expect(s.get()).toEqual(c2)
+    expect(JSON.parse(await fs.readFile(file(), 'utf8'))).toEqual(c2)
+    expect(await s.undo()).toBe(true)
+    expect(s.get()).toEqual(c1)
+    expect(await s.undo()).toBe(true)
+    expect(s.get()).toEqual(c0)
+    expect(await s.undo()).toBe(false)
+  })
+
+  it('concurrent_update_and_undo_are_serialized', async () => {
+    const s = await ConfigStore.open(dir, log)
+    const c0 = s.get()
+    const c1 = withUrl(c0, 'http://one:1')
+    const c2 = withUrl(c0, 'http://two:2')
+    await s.update(c1)
+    // update(c2) puis undo() lancés ensemble : équivalent à les exécuter l'un après l'autre.
+    const [, undone] = await Promise.all([s.update(c2), s.undo()])
+    expect(undone).toBe(true)
+    expect(s.get()).toEqual(c1)
+    expect(JSON.parse(await fs.readFile(file(), 'utf8'))).toEqual(c1)
+    expect(await s.undo()).toBe(true)
+    expect(s.get()).toEqual(c0)
+    expect(await s.undo()).toBe(false)
+  })
+
+  it('a_failed_update_does_not_block_the_next_one', async () => {
+    const s = await ConfigStore.open(dir, log)
+    const c1 = withUrl(s.get(), 'http://one:1')
+    const bad = { ...s.get(), device: { brightness: 7 } } as unknown as AppConfig
+    const results = await Promise.allSettled([s.update(bad), s.update(c1)])
+    expect(results[0]!.status).toBe('rejected')
+    expect(results[1]!.status).toBe('fulfilled')
+    expect(s.get()).toEqual(c1)
+  })
+
   it('undo history is capped at 50', async () => {
     const s = await ConfigStore.open(dir, log)
     for (let i = 0; i < 55; i++) await s.update(withUrl(s.get(), `http://h${i}:1`))

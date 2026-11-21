@@ -24,6 +24,8 @@ function validate(value: unknown): AppConfig {
 export class ConfigStore {
   private history: AppConfig[] = []
   private listeners = new Set<(cfg: AppConfig, prev: AppConfig) => void>()
+  /** Verrou : chaîne de promesses qui exécute `update` et `undo` un à la fois, dans l'ordre d'appel. */
+  private lock: Promise<unknown> = Promise.resolve()
 
   private constructor(
     private readonly file: string,
@@ -68,7 +70,21 @@ export class ConfigStore {
     return this.current
   }
 
-  async update(next: AppConfig): Promise<void> {
+  update(next: AppConfig): Promise<void> {
+    return this.serialized(() => this.doUpdate(next))
+  }
+
+  undo(): Promise<boolean> {
+    return this.serialized(() => this.doUndo())
+  }
+
+  private serialized<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.lock.then(task, task)
+    this.lock = run.catch(() => undefined)
+    return run
+  }
+
+  private async doUpdate(next: AppConfig): Promise<void> {
     const valid = structuredClone(validate(next))
     await this.write(valid)
     this.history.push(this.current)
@@ -76,7 +92,7 @@ export class ConfigStore {
     this.apply(valid)
   }
 
-  async undo(): Promise<boolean> {
+  private async doUndo(): Promise<boolean> {
     const previous = this.history.pop()
     if (!previous) return false
     try {

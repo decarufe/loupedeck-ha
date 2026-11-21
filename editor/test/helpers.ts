@@ -25,7 +25,7 @@ export function entity(entityId: string, over: Partial<EntityInfo> = {}): Entity
   }
 }
 
-export interface MockOptions { entities?: EntityInfo[]; entitiesStatus?: number }
+export interface MockOptions { entities?: EntityInfo[]; entitiesStatus?: number; putDelayMs?: number }
 
 /** `fetch` simulé : GET /api/config renvoie la configuration courante, PUT l'enregistre et la renvoie. */
 export function mockFetch(initial: PublicConfig = publicConfig(), opts: MockOptions = {}) {
@@ -33,15 +33,24 @@ export function mockFetch(initial: PublicConfig = publicConfig(), opts: MockOpti
   let entities = opts.entities ?? []
   let entitiesStatus = opts.entitiesStatus ?? 200
   const calls: Call[] = []
+  let putsInFlight = 0
+  let maxPutsInFlight = 0
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const call: Call = { method, url, headers: (init?.headers ?? {}) as Record<string, string>, body: init?.body ? JSON.parse(String(init.body)) : undefined }
     calls.push(call)
     const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } })
     if (url === '/api/config' && method === 'PUT') {
-      const { newToken: _n, ...rest } = call.body
-      current = { ...rest, ha: { ...rest.ha, hasToken: true }, loadWarning: null }
-      return json(current)
+      putsInFlight++
+      maxPutsInFlight = Math.max(maxPutsInFlight, putsInFlight)
+      try {
+        if (opts.putDelayMs) await new Promise((r) => setTimeout(r, opts.putDelayMs))
+        const { newToken: _n, ...rest } = call.body
+        current = { ...rest, ha: { ...rest.ha, hasToken: true }, loadWarning: null }
+        return json(current)
+      } finally {
+        putsInFlight--
+      }
     }
     if (url === '/api/config/undo' && method === 'POST') return json(current)
     if (url === '/api/config') return json(current)
@@ -53,6 +62,9 @@ export function mockFetch(initial: PublicConfig = publicConfig(), opts: MockOpti
   return {
     calls,
     puts: () => calls.filter((c) => c.method === 'PUT'),
+    maxPutsInFlight: () => maxPutsInFlight,
+    /** Modifie la configuration côté « serveur », comme une autre fenêtre de l'éditeur. */
+    setServerConfig: (cfg: PublicConfig) => { current = cfg },
     setEntities: (list: EntityInfo[]) => { entities = list },
     setEntitiesStatus: (status: number) => { entitiesStatus = status },
   }

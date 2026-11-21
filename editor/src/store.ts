@@ -30,8 +30,18 @@ const initial = (): EditorState => ({
 
 export const state = reactive<EditorState>(initial())
 
+/** File des écritures : un seul PUT (ou annulation) à la fois, dans l'ordre d'appel. */
+let queue: Promise<unknown> = Promise.resolve()
+
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task, task)
+  queue = run.catch(() => undefined)
+  return run
+}
+
 export function reset() {
   Object.assign(state, initial())
+  queue = Promise.resolve()
 }
 
 function fail(e: unknown) {
@@ -71,20 +81,25 @@ export async function loadEntities() {
   }
 }
 
-/** Clone la configuration, applique la mutation, l'envoie ; en cas d'échec l'erreur du serveur est affichée. */
-export async function save(mutator: (cfg: PublicConfig) => void, newToken?: string): Promise<boolean> {
-  if (!state.config) return false
-  const draft = JSON.parse(JSON.stringify(state.config)) as PublicConfig
-  mutator(draft)
-  try {
-    state.config = await api.putConfig(draft, newToken)
-    state.error = null
-    state.previewVersion++
-    return true
-  } catch (e) {
-    fail(e)
-    return false
-  }
+/**
+ * Met la sauvegarde en file. À son tour, la mutation s'applique à la configuration la plus récente
+ * (celle renvoyée par le PUT précédent), puis part ; en cas d'échec l'erreur du serveur est affichée.
+ */
+export function save(mutator: (cfg: PublicConfig) => void, newToken?: string): Promise<boolean> {
+  return enqueue(async () => {
+    if (!state.config) return false
+    const draft = JSON.parse(JSON.stringify(state.config)) as PublicConfig
+    mutator(draft)
+    try {
+      state.config = await api.putConfig(draft, newToken)
+      state.error = null
+      state.previewVersion++
+      return true
+    } catch (e) {
+      fail(e)
+      return false
+    }
+  })
 }
 
 const slotKind = (t: SlotTarget): SlotKind => (t.kind === 'key' ? 'key' : 'dimmer')
@@ -140,12 +155,14 @@ export async function clearSlot(target: SlotTarget): Promise<boolean> {
   return ok
 }
 
-export async function undo() {
-  try {
-    state.config = await api.undo()
-    state.error = null
-    state.previewVersion++
-  } catch (e) { fail(e) }
+export function undo(): Promise<void> {
+  return enqueue(async () => {
+    try {
+      state.config = await api.undo()
+      state.error = null
+      state.previewVersion++
+    } catch (e) { fail(e) }
+  })
 }
 
 export async function handleLive(m: LiveMessage) {
@@ -169,5 +186,9 @@ export async function handleLive(m: LiveMessage) {
 export async function init(): Promise<() => void> {
   // Les entités sont chargées par la palette à son ouverture, puis sur chaque message live « entities ».
   await Promise.all([loadConfig(), loadStatus()])
-  return api.connectLive((m) => { void handleLive(m) })
+  // À chaque réouverture du WebSocket (serveur redémarré, coupure), des messages ont pu être manqués :
+  // on recharge la configuration et le statut.
+  return api.connectLive((m) => { void handleLive(m) }, () => {
+    void Promise.all([loadConfig(), loadStatus()]).then(() => { state.previewVersion++ })
+  })
 }

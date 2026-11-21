@@ -52,14 +52,22 @@ export const getEntities = () => request<EntityInfo[]>('/api/entities')
 export const getStatus = () => request<Status>('/api/status')
 export const previewUrl = (button: number, version: number) => `/api/preview/${button}.png?v=${version}`
 
-/** WebSocket live avec reconnexion toutes les 2 s. Retourne une fonction d'arrêt. */
-export function connectLive(onMessage: (m: LiveMessage) => void): () => void {
+/**
+ * WebSocket live avec reconnexion toutes les 2 s. `onReopen` est appelé à chaque ouverture qui suit
+ * une coupure (pas à la première). Retourne une fonction d'arrêt.
+ */
+export function connectLive(onMessage: (m: LiveMessage) => void, onReopen?: () => void): () => void {
   let ws: WebSocket | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   let stopped = false
+  let openedOnce = false
   const open = () => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     ws = new WebSocket(`${proto}://${location.host}/api/live`)
+    ws.onopen = () => {
+      if (openedOnce) onReopen?.()
+      openedOnce = true
+    }
     ws.onmessage = (e) => {
       try { onMessage(JSON.parse(String(e.data)) as LiveMessage) } catch { /* message illisible ignoré */ }
     }
