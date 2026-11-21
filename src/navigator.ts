@@ -178,6 +178,7 @@ export class Navigator {
       const view = this.dashboards[this.active]?.view() ?? EMPTY_VIEW
       const surface = createSurface()
       await paint(surface, view)
+      if (this.disposed) return
       this.device.present(surface)
       this.updateBlink(view)
     } catch (err) {
@@ -199,6 +200,7 @@ export class Navigator {
     if (this.blinkTimer) return
     this.blinkRed = false
     this.blinkTimer = setInterval(() => {
+      if (this.disposed) return
       this.blinkRed = !this.blinkRed
       this.device.setLed(this.active, this.blinkRed ? ALERT_COLOR : this.ledColor(this.active))
     }, BLINK_MS)

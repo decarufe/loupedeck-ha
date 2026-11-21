@@ -7,6 +7,12 @@ import type { Dashboard } from '../src/dashboards/types.js'
 import type { InputEvent } from '../src/device/input.js'
 import type { View } from '../src/views.js'
 
+const paintGate = vi.hoisted(() => ({ hold: null as Promise<void> | null }))
+vi.mock('../src/render/painters.js', async (orig) => {
+  const actual = await orig<typeof import('../src/render/painters.js')>()
+  return { ...actual, paint: async (...a: Parameters<typeof actual.paint>) => { await paintGate.hold; return actual.paint(...a) } }
+})
+
 class FakeDevice implements DevicePort {
   present = vi.fn()
   setLed = vi.fn()
@@ -230,6 +236,27 @@ describe('Navigator', () => {
     nav.dispose()
     expect(made[3].deactivate).toHaveBeenCalledTimes(1)
     expect(device.listeners()).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('dispose_during_paint_leaves_nothing', async () => {
+    vi.useFakeTimers()
+    stored = 3
+    nav.applyConfig(defaultConfig())
+    made[3].stale = true
+    await vi.advanceTimersByTimeAsync(10)
+    device.present.mockClear()
+    device.setLed.mockClear()
+    let release!: () => void
+    paintGate.hold = new Promise<void>(r => { release = r })
+    nav.requestRender()
+    await vi.advanceTimersByTimeAsync(10)
+    nav.dispose()
+    paintGate.hold = null
+    release()
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(device.present).not.toHaveBeenCalled()
+    expect(device.setLed).not.toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(0)
   })
 })
