@@ -22,6 +22,9 @@ import { CameraImageError, OFFLINE_MESSAGE, type Forecast, type ForecastType, ty
 const AUTH_TIMEOUT_MS = 10_000
 const CAMERA_TIMEOUT_MS = 5000
 const DEFAULT_RETRY_DELAY_MS = 5000
+/** Ping périodique : détecte une connexion à moitié ouverte (socket ouverte, plus rien ne revient). */
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10_000
 
 function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '')
@@ -173,6 +176,10 @@ export interface HaClientOptions {
   log: Logger
   /** Délai entre deux tentatives de connexion initiale (hors refus du jeton). */
   retryDelayMs?: number
+  /** Intervalle entre deux `ping` (30 s par défaut). */
+  heartbeatIntervalMs?: number
+  /** Délai maximal d'attente du `pong` (10 s par défaut) ; au-delà : hors ligne puis reconnexion forcée. */
+  heartbeatTimeoutMs?: number
 }
 
 interface RegistryEntity {
@@ -194,6 +201,12 @@ export class HaClient implements HaPort {
   private readonly allowSelfSigned: boolean
   private readonly log: Logger
   private readonly retryDelayMs: number
+  private readonly heartbeatIntervalMs: number
+  private readonly heartbeatTimeoutMs: number
+  private heartbeatTimer: NodeJS.Timeout | null = null
+  private pingInFlight = false
+  /** Incrémenté à chaque arrêt de la minuterie : un ping d'une génération périmée est ignoré. */
+  private heartbeatGen = 0
   private readonly dispatcher: Agent | undefined
   private conn: Connection | null = null
   private current: HaStatus = { state: 'connecting', reason: null }
@@ -216,6 +229,8 @@ export class HaClient implements HaPort {
     this.allowSelfSigned = o.allowSelfSigned
     this.log = scrubbingLogger(o.log, this.scrub)
     this.retryDelayMs = o.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS
+    this.heartbeatIntervalMs = o.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS
+    this.heartbeatTimeoutMs = o.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS
     this.dispatcher = o.allowSelfSigned ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined
   }
 
@@ -340,6 +355,7 @@ export class HaClient implements HaPort {
     this.closed = true
     if (this.retryTimer) clearTimeout(this.retryTimer)
     this.retryTimer = null
+    this.stopHeartbeat()
     this.entityListeners.clear()
     this.statusListeners.clear()
     // On ne désabonne pas la collection d'entités : son désabonnement arme un minuteur de 5 s dans la
@@ -349,6 +365,42 @@ export class HaClient implements HaPort {
     conn?.close()
     void this.dispatcher?.close().catch(() => undefined)
     this.current = { state: 'offline', reason: 'network' }
+  }
+
+  private startHeartbeat(conn: Connection): void {
+    this.stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => this.heartbeat(conn), this.heartbeatIntervalMs)
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    this.heartbeatTimer = null
+    this.pingInFlight = false
+    this.heartbeatGen++
+  }
+
+  private heartbeat(conn: Connection): void {
+    if (this.closed || this.conn !== conn || !conn.connected) {
+      this.stopHeartbeat()
+      return
+    }
+    if (this.pingInFlight) return
+    this.pingInFlight = true
+    const gen = this.heartbeatGen
+    let timer: NodeJS.Timeout | undefined
+    const timedOut = new Promise<'timeout'>((resolve) => { timer = setTimeout(() => resolve('timeout'), this.heartbeatTimeoutMs) })
+    const pong = conn.ping().then(() => 'pong' as const, () => 'lost' as const)
+    void Promise.race([pong, timedOut]).then((outcome) => {
+      clearTimeout(timer)
+      if (this.conn !== conn || this.closed || gen !== this.heartbeatGen) return
+      this.pingInFlight = false
+      if (outcome !== 'timeout') return
+      // Une perte de connexion ('lost') est gérée par l'événement 'disconnected' de la librairie.
+      this.log.warn(`Home Assistant ne répond plus (aucun pong en ${this.heartbeatTimeoutMs} ms), reconnexion forcée`)
+      this.stopHeartbeat()
+      this.setStatus({ state: 'offline', reason: 'network' })
+      conn.reconnect(true)
+    })
   }
 
   private requireConn(): Connection {
@@ -415,15 +467,18 @@ export class HaClient implements HaPort {
       if (this.conn !== conn) return
       this.log.info('Home Assistant reconnecté')
       this.setStatus({ state: 'online', reason: null })
+      this.startHeartbeat(conn)
     })
     conn.addEventListener('disconnected', () => {
       if (this.conn !== conn) return
+      this.stopHeartbeat()
       this.log.warn('Connexion à Home Assistant perdue, reconnexion automatique')
       this.setStatus({ state: 'offline', reason: 'network' })
     })
     conn.addEventListener('reconnect-error', (_c, err) => {
       if (this.conn !== conn || err !== ERR_INVALID_AUTH) return
       this.log.error('Home Assistant a refusé le jeton à la reconnexion : vérifiez-le dans la configuration', { code: 'ERR_INVALID_AUTH' })
+      this.stopHeartbeat()
       this.conn = null
       conn.close()
       this.setStatus({ state: 'offline', reason: 'auth' })
@@ -435,5 +490,6 @@ export class HaClient implements HaPort {
     })
     this.log.info('Connecté à Home Assistant', { url: this.base, haVersion: conn.haVersion })
     this.setStatus({ state: 'online', reason: null })
+    this.startHeartbeat(conn)
   }
 }

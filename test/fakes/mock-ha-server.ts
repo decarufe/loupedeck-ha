@@ -16,6 +16,8 @@ export class MockHaServer {
   /** Refuse la mise à niveau WebSocket (HTTP 503), comme un HA en cours de démarrage. */
   refuse = false
   validToken: string
+  /** Ne répond plus aux `ping` : simule une connexion à moitié ouverte (socket ouverte, plus rien ne revient). */
+  ignorePings = false
   haVersion = '2026.11.0'
   /** Messages reçus des clients après l'authentification. */
   received: Msg[] = []
@@ -151,6 +153,7 @@ export class MockHaServer {
         reply(null)
         return
       case 'ping':
+        if (this.ignorePings) return
         ws.send(JSON.stringify({ id: msg.id, type: 'pong' }))
         return
       case 'subscribe_entities': {

@@ -32,8 +32,19 @@ async function startServer(): Promise<MockHaServer> {
   return s
 }
 
-function makeClient(server: MockHaServer, o: { token?: string; url?: string; retryDelayMs?: number } = {}): HaClient {
-  const c = new HaClient({ url: o.url ?? server.url, token: o.token ?? GOOD, allowSelfSigned: false, log, retryDelayMs: o.retryDelayMs ?? 50 })
+function makeClient(
+  server: MockHaServer,
+  o: { token?: string; url?: string; retryDelayMs?: number; heartbeatIntervalMs?: number; heartbeatTimeoutMs?: number } = {},
+): HaClient {
+  const c = new HaClient({
+    url: o.url ?? server.url,
+    token: o.token ?? GOOD,
+    allowSelfSigned: false,
+    log,
+    retryDelayMs: o.retryDelayMs ?? 50,
+    heartbeatIntervalMs: o.heartbeatIntervalMs,
+    heartbeatTimeoutMs: o.heartbeatTimeoutMs,
+  })
   clients.push(c)
   return c
 }
@@ -130,6 +141,64 @@ describe('HaClient', () => {
     // L'abonnement aux entités est rétabli sur la nouvelle connexion.
     server.pushState('light.salon', 'off', { brightness: 0 })
     await vi.waitFor(() => expect(c.entities()['light.salon'].state).toBe('off'), waitOpts)
+  })
+
+  it('heartbeat_pings_a_responsive_server_and_stays_online', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { heartbeatIntervalMs: 30, heartbeatTimeoutMs: 100 })
+    const statuses: HaStatus[] = []
+    c.onStatus((s) => { statuses.push(s) })
+    c.start()
+    await vi.waitFor(() => expect(server.received.filter((m) => m.type === 'ping').length).toBeGreaterThanOrEqual(3), waitOpts)
+    expect(statuses).toEqual([{ state: 'online', reason: null }])
+    expect(server.connections).toBe(1)
+  })
+
+  it('heartbeat_timeout_goes_offline_then_reconnects', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { heartbeatIntervalMs: 40, heartbeatTimeoutMs: 40 })
+    c.start()
+    await vi.waitFor(() => expect(c.status()).toEqual({ state: 'online', reason: null }), waitOpts)
+    const statuses: HaStatus[] = []
+    c.onStatus((s) => { statuses.push(s) })
+    // Connexion à moitié ouverte : la socket reste ouverte mais plus rien ne répond.
+    server.ignorePings = true
+    await vi.waitFor(() => expect(statuses).toContainEqual({ state: 'offline', reason: 'network' }), waitOpts)
+    server.ignorePings = false
+    await vi.waitFor(() => {
+      expect(c.status()).toEqual({ state: 'online', reason: null })
+      expect(server.connections).toBeGreaterThanOrEqual(2)
+    }, waitOpts)
+    // L'abonnement aux entités suit la nouvelle connexion.
+    server.pushState('light.salon', 'off', { brightness: 0 })
+    await vi.waitFor(() => expect(c.entities()['light.salon'].state).toBe('off'), waitOpts)
+  })
+
+  it('heartbeat_stops_on_close', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { heartbeatIntervalMs: 20, heartbeatTimeoutMs: 100 })
+    c.start()
+    await vi.waitFor(() => expect(server.received.some((m) => m.type === 'ping')).toBe(true), waitOpts)
+    c.close()
+    await sleep(30)
+    const pings = server.received.filter((m) => m.type === 'ping').length
+    await sleep(120)
+    expect(server.received.filter((m) => m.type === 'ping').length).toBe(pings)
+  })
+
+  it('heartbeat_stops_while_disconnected', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { heartbeatIntervalMs: 20, heartbeatTimeoutMs: 20, retryDelayMs: 1000 })
+    c.start()
+    await vi.waitFor(() => expect(c.status()).toEqual({ state: 'online', reason: null }), waitOpts)
+    const statuses: HaStatus[] = []
+    c.onStatus((s) => { statuses.push(s) })
+    server.refuse = true
+    server.dropAll()
+    await vi.waitFor(() => expect(statuses).toContainEqual({ state: 'offline', reason: 'network' }), waitOpts)
+    await sleep(150)
+    // Aucune nouvelle transition parasite causée par une minuterie restée active.
+    expect(statuses).toEqual([{ state: 'offline', reason: 'network' }])
   })
 
   it('reconnect_auth_invalid_stops', async () => {
