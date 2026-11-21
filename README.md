@@ -99,6 +99,21 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Uninstal
 Après une mise à jour du code, relancez `pnpm run build`. Si l'installation est refusée, lancez PowerShell
 en administrateur.
 
+## Raccourci vers l'éditeur
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Install
+```
+
+En plus de la tâche planifiée, `-Install` crée le raccourci **« Loupedeck HA – Configuration »** (fichier
+`.url`) sur le **Bureau** et dans le **menu Démarrer**. Il ouvre l'éditeur sur `http://127.0.0.1:<port>/`
+(l'application doit tourner). Le port est lu dans `editor.port` de `%APPDATA%\loupedeck-ha\config.json`,
+sinon 8765 ; si vous changez le port, relancez `-Install` pour mettre les raccourcis à jour. Le jeton n'est
+jamais lu ni affiché. `-Uninstall` supprime la tâche et les deux raccourcis (sans erreur s'ils n'existent pas).
+
+Test du script (dossiers temporaires, aucune tâche ni raccourci réel) :
+`powershell -ExecutionPolicy Bypass -File scripts\test-shortcuts.ps1`
+
 ## Dépannage
 
 - **Écran noir alors que la console est connectée** : la Live démarre avec la luminosité à 0 ; rien n'est
