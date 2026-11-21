@@ -7,6 +7,7 @@ import type { Dashboard, DashboardDeps } from './types.js'
 
 export const DIM_STEP_PCT = 5
 const KEY_COUNT = 12
+const EMPTY_MESSAGE: TileView = { ...EMPTY_TILE, label: 'Aucune lumière configurée' }
 
 function haPct(attributes: Record<string, any>): number {
   const b = attributes.brightness
@@ -47,9 +48,10 @@ export function createLightsDashboard(cfg: LightsDashboard, d: DashboardDeps): D
 
   return {
     view() {
+      const unconfigured = !cfg.keys.some(Boolean) && !KNOB_IDS.some(k => cfg.dimmers[k])
       return {
         kind: 'grid',
-        keys: Array.from({ length: KEY_COUNT }, (_, i) => tile(cfg.keys[i] ?? null)),
+        keys: Array.from({ length: KEY_COUNT }, (_, i) => (unconfigured && i === 5 ? EMPTY_MESSAGE : tile(cfg.keys[i] ?? null))),
         left: [0, 1, 2].map(z => tile(dimmerSlot('left', z))),
         right: [0, 1, 2].map(z => tile(dimmerSlot('right', z))),
         offline: d.ha.status().state !== 'online',

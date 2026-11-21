@@ -3,7 +3,7 @@ import { FakeHa } from '../fakes/fake-ha.js'
 import { Actions } from '../../src/ha/actions.js'
 import { createLightsDashboard } from '../../src/dashboards/lights.js'
 import { EMPTY_TILE, type GridView } from '../../src/views.js'
-import { KNOB_IDS, type KnobId, type LightsDashboard } from '../../src/config/schema.js'
+import { defaultConfig, KNOB_IDS, type KnobId, type LightsDashboard } from '../../src/config/schema.js'
 
 function cfg(over: Partial<LightsDashboard> = {}): LightsDashboard {
   const dimmers = Object.fromEntries(KNOB_IDS.map(k => [k, null])) as Record<KnobId, null>
@@ -170,5 +170,25 @@ describe('tableau Lumières', () => {
     d.deactivate()
     ha.setEntity('light.salon', 'off')
     expect(render).toHaveBeenCalledTimes(2)
+  })
+
+  it('empty_board_shows_message', () => {
+    const c = cfg({ keys: [], dimmers: Object.fromEntries(KNOB_IDS.map(k => [k, null])) as Record<KnobId, null> })
+    const v = grid(make(c))
+    expect(v.keys[5]).toMatchObject({ state: 'empty', label: 'Aucune lumière configurée' })
+    expect(v.keys.filter(k => k.label !== '')).toHaveLength(1)
+  })
+
+  it('default_board_shows_message', () => {
+    const b = defaultConfig().buttons[0] as LightsDashboard
+    expect(grid(make(b)).keys[5].label).toBe('Aucune lumière configurée')
+  })
+
+  it('message_disappears_with_one_key_or_one_dimmer', () => {
+    const none = Object.fromEntries(KNOB_IDS.map(k => [k, null])) as Record<KnobId, null>
+    const withKey = grid(make(cfg({ keys: [{ entityId: 'light.salon' }], dimmers: none })))
+    expect(withKey.keys.some(k => k.label === 'Aucune lumière configurée')).toBe(false)
+    const withDimmer = grid(make(cfg({ keys: [], dimmers: { ...none, knobBR: { entityId: 'light.bureau' } } })))
+    expect(withDimmer.keys.some(k => k.label === 'Aucune lumière configurée')).toBe(false)
   })
 })

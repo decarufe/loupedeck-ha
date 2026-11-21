@@ -67,10 +67,30 @@ function offlineBadge(s: Surface): void {
 
 // ---------- grille ----------
 
+/** Libellé d'une tuile vide : gris, centré, sur au plus 3 lignes (césure aux espaces), chaque ligne tronquée avec « … ». */
+function paintEmptyLabel(ctx: SKRSContext2D, r: Rect, label: string, compact: boolean): void {
+  const size = compact ? 10 : 12
+  const maxW = r.width - 8
+  ctx.font = `${size}px ${FONT}`
+  const lines: string[] = []
+  let cur = ''
+  for (const word of label.split(/\s+/).filter(Boolean)) {
+    const next = cur ? `${cur} ${word}` : word
+    if (!cur || ctx.measureText(next).width <= maxW) cur = next
+    else { lines.push(cur); cur = word }
+  }
+  if (cur) lines.push(cur)
+  if (lines.length > 3) lines.splice(3, lines.length - 3, lines.slice(2).join(' '))
+  const lh = size + 4
+  const top = r.y + r.height / 2 - (lines.length * lh) / 2 + lh / 2
+  lines.forEach((line, i) => drawText(ctx, line, r.x + r.width / 2, top + i * lh, maxW, `${size}px ${FONT}`, '#9E9E9E', 'center'))
+}
+
 function paintTile(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): void {
   if (t.state === 'empty') {
     ctx.fillStyle = COLORS.empty
     ctx.fillRect(r.x, r.y, r.width, r.height)
+    if (t.label) paintEmptyLabel(ctx, r, t.label, compact)
     return
   }
   const bg = t.state === 'on' ? t.accent : t.state === 'unavailable' || t.state === 'missing' ? COLORS.unavailable : COLORS.off

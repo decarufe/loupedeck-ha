@@ -129,4 +129,20 @@ describe('painters (corrections)', () => {
     const b = without.ctx.getImageData(0, 240, 480, 30).data
     expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true)
   })
+  it('empty_tile_with_label_draws_text_inside_tile', async () => {
+    const s = createSurface()
+    await paint(s, grid({ keys: [{ ...EMPTY_TILE, label: 'Aucun thermostat' }, ...Array.from({ length: 11 }, () => EMPTY_TILE)] }))
+    const inTile = s.ctx.getImageData(60, 0, 90, 90).data
+    let lit = 0
+    for (let i = 0; i < inTile.length; i += 4) if (inTile[i]! + inTile[i + 1]! + inTile[i + 2]! > 0) lit++
+    expect(lit).toBeGreaterThan(20)
+    const next = s.ctx.getImageData(150, 0, 90, 90).data
+    expect(next.every((v, i) => i % 4 === 3 || v === 0)).toBe(true)
+  })
+  it('empty_tile_without_label_stays_black', async () => {
+    const s = createSurface()
+    await paint(s, grid())
+    const all = s.ctx.getImageData(60, 0, 90, 90).data
+    expect(all.every((v, i) => i % 4 === 3 || v === 0)).toBe(true)
+  })
 })
