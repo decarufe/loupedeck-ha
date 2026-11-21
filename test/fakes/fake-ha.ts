@@ -9,6 +9,7 @@ export class FakeHa implements HaPort {
   calls: { domain: string; service: string; data?: object; target?: object }[] = []
   forecasts: Forecast[] = []
   forecastError: Error | null = null
+  forecastCalls: { entityId: string; type: ForecastType }[] = []
   cameraImage: Buffer | Error = TINY_JPEG
   private st: HaStatus = { state: 'online', reason: null }
   private ents: Record<string, HaEntity> = {}
@@ -55,7 +56,8 @@ export class FakeHa implements HaPort {
     return Promise.resolve()
   }
 
-  getForecasts(_entityId: string, _type: ForecastType): Promise<Forecast[]> {
+  getForecasts(entityId: string, type: ForecastType): Promise<Forecast[]> {
+    this.forecastCalls.push({ entityId, type })
     if (this.forecastError) return Promise.reject(this.forecastError)
     return Promise.resolve(this.forecasts)
   }
