@@ -1,6 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { createApp, type App } from './app.js'
+import { EXIT_CRASH, installProcessHandlers } from './lifecycle.js'
 import { createLogger, createSecretScrubber } from './log.js'
 
 const appData = process.env.APPDATA
@@ -17,13 +18,9 @@ function describe(err: unknown): { message: string; pile?: string } {
   return { message: scrub(String(err)) }
 }
 
-process.on('unhandledRejection', (reason) => {
-  log.error('Promesse rejetée sans traitement (l’application continue)', describe(reason))
-})
-process.on('uncaughtException', (err) => {
-  log.error('Erreur inattendue : arrêt de l’application', describe(err))
-  process.exit(1)
-})
+// Codes de sortie : 0 sur arrêt volontaire (Ctrl+C, SIGINT, SIGTERM), 1 sur plantage. Le lanceur
+// scripts\launch-hidden.vbs relance l'application tant que le code est différent de 0.
+installProcessHandlers({ proc: process, log, describe, stop: () => app?.stop() })
 
 if (!appData) log.warn('Variable APPDATA absente : dossier de configuration de repli utilisé', { dossier: configDir })
 
@@ -31,7 +28,7 @@ try {
   app = await createApp({ configDir, log, startEditor: true })
 } catch (err) {
   log.error('Démarrage impossible : configuration illisible', describe(err))
-  process.exit(1)
+  process.exit(EXIT_CRASH)
 }
 
 const cfg = app.store.get()
@@ -41,17 +38,3 @@ log.info('Loupedeck HA démarré', { configuration: path.join(configDir, 'config
 log.info('Home Assistant', { url: cfg.ha.url, jeton: cfg.ha.token.trim() ? 'configuré' : 'absent' })
 if (app.editorUrl) log.info('Éditeur', { url: app.editorUrl })
 
-let stopping = false
-async function shutdown(signal: NodeJS.Signals): Promise<void> {
-  if (stopping) return
-  stopping = true
-  log.info('Arrêt demandé', { signal })
-  try {
-    await app?.stop()
-  } catch (err) {
-    log.error('Erreur pendant l’arrêt', describe(err))
-  }
-  process.exit(0)
-}
-process.on('SIGINT', (s) => { void shutdown(s) })
-process.on('SIGTERM', (s) => { void shutdown(s) })
