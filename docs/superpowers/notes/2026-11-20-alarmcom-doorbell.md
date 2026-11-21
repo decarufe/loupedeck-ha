@@ -78,9 +78,9 @@ La spec demandait aussi de l'établir. D'après le code (`webrtc_ws.py`, `camera
 ### Option A : statu quo, l'image fixe par Home Assistant (déjà construit)
 
 - **Ce que c'est :** la source `ha-proxy` actuelle, réglée à environ 1 image/s.
-- **Effort :** nul. Deux ajustements facultatifs, d'environ une heure chacun :
-  1. **Cadrage de la sonnette.** L'image de la sonnette est **carrée** (960 × 960), alors que l'écran est en 16:9. L'application remplit l'écran : elle garde la bande centrale et coupe le haut et le bas de l'image. On perd l'heure incrustée, ainsi qu'une partie du haut de l'image, où se trouverait le visage d'une personne très proche de la porte. On pourrait proposer pour ce tableau un cadrage « image entière », avec des bandes noires sur les côtés.
-  2. **Intervalle pour Alarm.com.** Prendre par prudence **1 500 à 2 000 ms** pour les caméras Alarm.com, afin de limiter les requêtes vers leurs serveurs. Le réglage existe déjà dans l'éditeur (de 250 à 2 000 ms).
+- **Effort :** nul. Deux ajustements facultatifs, tous deux réglables maintenant dans l'éditeur, tableau par tableau :
+  1. **Cadrage de la sonnette.** L'image de la sonnette est **carrée** (960 × 960), alors que l'écran est en 16:9. Avec le cadrage par défaut, l'application remplit l'écran : elle garde la bande centrale et coupe le haut et le bas de l'image. On perd l'heure incrustée, ainsi qu'une partie du haut de l'image, où se trouverait le visage d'une personne très proche de la porte. Le réglage **« Cadrage »** du tableau caméra propose deux options : **« Plein écran »** (par défaut, image rognée) et **« Image entière »** (image complète centrée, bandes noires sur les côtés). Pour la sonnette, choisir « Image entière ».
+  2. **Intervalle pour Alarm.com.** Prendre par prudence **1 500 à 2 000 ms** pour les caméras Alarm.com, afin de limiter les requêtes vers leurs serveurs. Le champ **« Intervalle (ms) »** du tableau caméra accepte de 250 à 2 000 ms, par pas de 250 ms.
 - **Risques :** faibles.
   - Alarm.com pourrait limiter un usage intensif : rien de tel n'a été observé, et le flux ne tourne que tableau affiché.
   - Le délai d'environ 1 s par image donne un rendu « diaporama », pas de la vidéo fluide.
@@ -109,7 +109,7 @@ La spec demandait aussi de l'établir. D'après le code (`webrtc_ws.py`, `camera
 
 Ce qui reste à décider :
 
-- **Ajustements :** appliquer ou non les deux ajustements de l'option A, c'est-à-dire le cadrage « image entière » pour la sonnette et l'intervalle de 1 500 à 2 000 ms.
+- **Ajustements :** appliquer ou non, dans l'éditeur, les deux ajustements de l'option A, c'est-à-dire le cadrage « Image entière » pour la sonnette et l'intervalle de 1 500 à 2 000 ms.
 - **Caméra arrière :** l'ajouter ou non comme tableau caméra. Elle fonctionne de la même façon.
 - **Vidéo fluide :** revenir à l'option B seulement si la vidéo fluide devient un vrai besoin, après usage de l'option A.
 

@@ -51,13 +51,15 @@ export function createCameraDashboard(
   return {
     view(): FullView {
       const offline = d.ha.status().state !== 'online'
-      if (!cfg.entityId) return { kind: 'full', image: null, message: 'Aucune caméra configurée', stale: false, offline }
+      const fit = cfg.fit ?? 'cover'
+      if (!cfg.entityId) return { kind: 'full', image: null, message: 'Aucune caméra configurée', stale: false, offline, fit }
       return {
         kind: 'full',
         image,
         message: image ? null : 'Image non disponible',
         stale: isStale(),
         offline,
+        fit,
       }
     },
 

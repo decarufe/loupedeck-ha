@@ -25,7 +25,47 @@ function redJpeg(): Buffer {
   return c.toBuffer('image/jpeg')
 }
 
+/** Image carrée rouge : en « contain » sur 480 × 270, elle occupe x = 105..375 avec des bandes noires de chaque côté. */
+function redSquareJpeg(): Buffer {
+  const c = createCanvas(200, 200)
+  const g = c.getContext('2d')
+  g.fillStyle = '#ff0000'
+  g.fillRect(0, 0, 200, 200)
+  return c.toBuffer('image/jpeg')
+}
+
 describe('painters', () => {
+  it('full_cover_fills_the_screen', async () => {
+    const s = createSurface()
+    await paint(s, { kind: 'full', image: redSquareJpeg(), message: null, stale: false, offline: false, fit: 'cover' })
+    for (const x of [2, 50, 240, 430, 477]) expect(px(s, x, 135)[0]).toBeGreaterThan(200)
+  })
+
+  it('full_contain_whole_image_centered_with_black_bars', async () => {
+    const s = createSurface()
+    await paint(s, { kind: 'full', image: redSquareJpeg(), message: null, stale: false, offline: false, fit: 'contain' })
+    // Bandes noires à gauche (0..104) et à droite (376..479), sur toute la hauteur.
+    for (const [x, y] of [[0, 0], [50, 135], [100, 269], [380, 10], [430, 135], [479, 269]] as const) {
+      expect(px(s, x, y)).toEqual([0, 0, 0])
+    }
+    // Image entière : centre et bords haut/bas de l'image sont rouges.
+    for (const [x, y] of [[240, 135], [110, 2], [370, 267]] as const) {
+      const [r, g] = px(s, x, y)
+      expect(r).toBeGreaterThan(200)
+      expect(g).toBeLessThan(50)
+    }
+  })
+
+  it('full_contain_with_message_draws_no_text', async () => {
+    const withMsg = createSurface()
+    const without = createSurface()
+    const image = redSquareJpeg()
+    await paint(withMsg, { kind: 'full', image, message: 'Texte', stale: false, offline: false, fit: 'contain' })
+    await paint(without, { kind: 'full', image, message: null, stale: false, offline: false, fit: 'contain' })
+    expect(Buffer.from(withMsg.ctx.getImageData(0, 0, 480, 270).data).equals(Buffer.from(without.ctx.getImageData(0, 0, 480, 270).data))).toBe(true)
+  })
+
+
   it('grid_on_tile_uses_accent', async () => {
     const s = createSurface()
     await paint(s, withKey0(tile({})))

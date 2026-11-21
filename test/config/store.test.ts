@@ -77,6 +77,16 @@ describe('ConfigStore', () => {
     expect(s.loadWarning).toBeNull()
   })
 
+  it('old_camera_config_without_fit_loads_with_cover', async () => {
+    const old = JSON.parse(JSON.stringify(defaultConfig()))
+    for (const b of old.buttons) if (b?.type === 'camera') delete b.fit
+    await fs.writeFile(file(), JSON.stringify(old))
+    const s = await ConfigStore.open(dir, log)
+    expect(s.loadWarning).toBeNull()
+    const cam = s.get().buttons[3]
+    expect(cam?.type === 'camera' && cam.fit).toBe('cover')
+  })
+
   it('update_rejects_invalid', async () => {
     const s = await ConfigStore.open(dir, log)
     const before = await fs.readFile(file(), 'utf8')

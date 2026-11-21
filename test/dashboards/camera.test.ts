@@ -7,7 +7,7 @@ import type { FullView } from '../../src/views.js'
 import type { CameraDashboard } from '../../src/config/schema.js'
 
 function cfg(over: Partial<CameraDashboard> = {}): CameraDashboard {
-  return { type: 'camera', name: 'Porte', color: '#FF8800', entityId: 'camera.porte', source: 'ha-proxy', intervalMs: 1000, ...over }
+  return { type: 'camera', name: 'Porte', color: '#FF8800', entityId: 'camera.porte', source: 'ha-proxy', intervalMs: 1000, fit: 'cover', ...over }
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 const img = (n: number) => Buffer.from([n])
@@ -52,6 +52,12 @@ describe('tableau Caméra', () => {
 
   const make = (src: CameraSource, c = cfg()) => createCameraDashboard(c, { ha, actions, requestRender: render, createSource: () => src })
   const fv = (d: ReturnType<typeof make>) => d.view() as FullView
+
+  it('view_carries_fit', () => {
+    expect(fv(make(probe())).fit).toBe('cover')
+    expect(fv(make(probe(), cfg({ fit: 'contain' }))).fit).toBe('contain')
+    expect(fv(make(probe(), cfg({ entityId: null, fit: 'contain' }))).fit).toBe('contain')
+  })
 
   it('idle_until_active', async () => {
     const src = probe()

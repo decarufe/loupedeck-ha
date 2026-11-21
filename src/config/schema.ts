@@ -7,7 +7,10 @@ export interface KeySlot { entityId: string; label?: string; icon?: string }
 export interface LightsDashboard { type: 'lights'; name: string; color: string; keys: (KeySlot | null)[]; dimmers: Record<KnobId, KeySlot | null> }
 export interface ClimateDashboard { type: 'climate'; name: string; color: string; entityId: string | null; setpointKnob: KnobId; sensors: KeySlot[] }
 export interface WeatherDashboard { type: 'weather'; name: string; color: string; entityId: string | null }
-export interface CameraDashboard { type: 'camera'; name: string; color: string; entityId: string | null; source: 'ha-proxy'; intervalMs: number }
+/** Cadrage de l'image caméra : `cover` remplit l'écran (bords rognés), `contain` montre l'image entière avec des bandes noires. */
+export type CameraFit = 'cover' | 'contain'
+export const CAMERA_FITS = ['cover', 'contain'] as const satisfies readonly CameraFit[]
+export interface CameraDashboard { type: 'camera'; name: string; color: string; entityId: string | null; source: 'ha-proxy'; intervalMs: number; fit: CameraFit }
 export type DashboardConfig = LightsDashboard | ClimateDashboard | WeatherDashboard | CameraDashboard
 export interface AppConfig {
   version: 1
@@ -53,6 +56,8 @@ const camera = z.object({
   entityId: z.string().min(1).nullable(),
   source: z.literal('ha-proxy'),
   intervalMs: z.number().int().min(250).max(2000),
+  // Absent d'une ancienne configuration : `cover` (comportement d'origine) appliqué au chargement.
+  fit: z.enum(CAMERA_FITS).default('cover'),
 })
 
 const dashboard = z.discriminatedUnion('type', [lights, climate, weather, camera])
@@ -82,7 +87,7 @@ export function emptyDashboard(type: DashboardConfig['type'], index: number): Da
     case 'weather':
       return { type, name: NAMES.weather, color, entityId: null }
     case 'camera':
-      return { type, name: `Caméra ${index + 1}`, color, entityId: null, source: 'ha-proxy', intervalMs: 1000 }
+      return { type, name: `Caméra ${index + 1}`, color, entityId: null, source: 'ha-proxy', intervalMs: 1000, fit: 'cover' }
   }
 }
 

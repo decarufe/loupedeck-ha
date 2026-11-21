@@ -214,7 +214,9 @@ async function paintFull(s: Surface, v: FullView): Promise<void> {
     try {
       const img = await loadImage(v.image)
       if (img && img.width > 0 && img.height > 0) {
-        const k = Math.max(SCREEN.width / img.width, SCREEN.height / img.height)
+        // cover : l'image remplit l'écran (bords rognés) ; contain : image entière, bandes noires (fond déjà noir).
+        const scale = v.fit === 'contain' ? Math.min : Math.max
+        const k = scale(SCREEN.width / img.width, SCREEN.height / img.height)
         const w = img.width * k
         const h = img.height * k
         ctx.drawImage(img, (SCREEN.width - w) / 2, (SCREEN.height - h) / 2, w, h)

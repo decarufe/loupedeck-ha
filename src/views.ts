@@ -22,5 +22,6 @@ export interface WeatherView {
   message: string | null
   offline: boolean
 }
-export interface FullView { kind: 'full'; image: Buffer | null; message: string | null; stale: boolean; offline: boolean }
+/** `fit` : `cover` remplit l'écran, `contain` montre l'image entière centrée (bandes noires). */
+export interface FullView { kind: 'full'; image: Buffer | null; message: string | null; stale: boolean; offline: boolean; fit: 'cover' | 'contain' }
 export type View = GridView | WeatherView | FullView

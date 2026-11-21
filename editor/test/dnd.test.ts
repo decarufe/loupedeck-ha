@@ -144,3 +144,68 @@ describe('glisser-déposer et emplacements', () => {
     expect(w.find('select.sensor-picker').exists()).toBe(false)
   })
 })
+
+describe('réglages du tableau Caméra', () => {
+  const cameraConfig = () => withButtons((c) => {
+    const cam = emptyDashboard('camera', 3)
+    if (cam.type === 'camera') cam.entityId = 'camera.porch'
+    c.buttons[3] = cam
+  })
+
+  it('camera_interval_field_puts_interval', async () => {
+    const m = mockFetch(cameraConfig(), { entities: entities() })
+    const w = await mountEditor()
+    await flushPromises()
+    await w.findAll('.round-button')[3]!.trigger('click')
+    const input = w.get('input.camera-interval')
+    expect(input.attributes('min')).toBe('250')
+    expect(input.attributes('max')).toBe('2000')
+    expect(input.attributes('step')).toBe('250')
+    expect((input.element as HTMLInputElement).value).toBe('1000')
+    expect(w.text()).toContain('Intervalle (ms)')
+    await input.setValue('500')
+    await input.trigger('change')
+    await flushPromises()
+    expect(m.puts().at(-1)!.body.buttons[3].intervalMs).toBe(500)
+  })
+
+  it('camera_interval_snaps_to_step_and_bounds', async () => {
+    const m = mockFetch(cameraConfig(), { entities: entities() })
+    const w = await mountEditor()
+    await flushPromises()
+    await w.findAll('.round-button')[3]!.trigger('click')
+    const input = w.get('input.camera-interval')
+    await input.setValue('5000')
+    await input.trigger('change')
+    await flushPromises()
+    expect(m.puts().at(-1)!.body.buttons[3].intervalMs).toBe(2000)
+    await input.setValue('620')
+    await input.trigger('change')
+    await flushPromises()
+    expect(m.puts().at(-1)!.body.buttons[3].intervalMs).toBe(500)
+  })
+
+  it('camera_fit_select_puts_fit', async () => {
+    const m = mockFetch(cameraConfig(), { entities: entities() })
+    const w = await mountEditor()
+    await flushPromises()
+    await w.findAll('.round-button')[3]!.trigger('click')
+    expect(w.text()).toContain('Cadrage')
+    const select = w.get('select.camera-fit')
+    expect(options(w, 'select.camera-fit')).toEqual(['cover', 'contain'])
+    expect(select.findAll('option').map((o) => o.text())).toEqual(['Plein écran', 'Image entière'])
+    expect((select.element as HTMLSelectElement).value).toBe('cover')
+    await select.setValue('contain')
+    await flushPromises()
+    expect(m.puts().at(-1)!.body.buttons[3].fit).toBe('contain')
+  })
+
+  it('camera_settings_absent_for_other_dashboards', async () => {
+    mockFetch(cameraConfig(), { entities: entities() })
+    const w = await mountEditor()
+    await flushPromises()
+    await w.findAll('.round-button')[2]!.trigger('click') // Météo
+    expect(w.find('input.camera-interval').exists()).toBe(false)
+    expect(w.find('select.camera-fit').exists()).toBe(false)
+  })
+})
