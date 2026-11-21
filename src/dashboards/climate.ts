@@ -2,7 +2,7 @@ import { KNOB_IDS, type ClimateDashboard } from '../config/schema.js'
 import type { InputEvent } from '../device/input.js'
 import { formatTemp, HVAC_LABELS } from '../shared/format.js'
 import { EMPTY_TILE, type TileView } from '../views.js'
-import type { Dashboard, DashboardDeps } from './types.js'
+import { isUnavailableState, type Dashboard, type DashboardDeps } from './types.js'
 
 const KEY_COUNT = 12
 const MODE_START = 4
@@ -42,7 +42,7 @@ export function createClimateDashboard(cfg: ClimateDashboard, d: DashboardDeps):
     const e = d.ha.entities()[slot.entityId]
     if (!e) return { ...base, label: slot.label ?? slot.entityId, icon: 'mdi:thermometer', state: 'missing', valueText: 'Introuvable' }
     const label = slot.label ?? e.attributes.friendly_name ?? slot.entityId
-    if (e.state === 'unavailable') return { ...base, label, icon: 'mdi:thermometer', state: 'unavailable', valueText: 'Indisponible' }
+    if (isUnavailableState(e.state)) return { ...base, label, icon: 'mdi:thermometer', state: 'unavailable', valueText: 'Indisponible' }
     return { ...base, label, icon: 'mdi:thermometer', state: 'on', valueText: formatTemp(Number(e.state)) }
   }
 
@@ -64,7 +64,7 @@ export function createClimateDashboard(cfg: ClimateDashboard, d: DashboardDeps):
       } else if (!entity) {
         keys[0] = { ...EMPTY_TILE, accent: cfg.color, label: id, state: 'missing', valueText: 'Introuvable' }
       } else {
-        const unavailable = entity.state === 'unavailable'
+        const unavailable = isUnavailableState(entity.state)
         const state = unavailable ? 'unavailable' : entity.state !== 'off' ? 'on' : 'off'
         const base = { accent: cfg.color, level: null }
         const pending = d.actions.overlay(id).pending

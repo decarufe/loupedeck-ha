@@ -164,6 +164,20 @@ describe('tableau Température', () => {
     expect(v.keys[1].state).toBe('unavailable')
   })
 
+  it('unknown_climate_is_unavailable', () => {
+    ha.setEntity('climate.t10', 'unknown', attrs())
+    const v = grid(make())
+    expect(v.keys[0]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible' })
+    expect(v.keys[1]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible' })
+    expect(v.right[0]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible' })
+  })
+
+  it('unknown_sensor_is_unavailable', () => {
+    ha.setEntity('sensor.inconnu', 'unknown', { friendly_name: 'Inconnu' })
+    const v = grid(make(cfg({ sensors: [{ entityId: 'sensor.inconnu' }] })))
+    expect(v.keys[8]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible', label: 'Inconnu' })
+  })
+
   it('offline_flag', () => {
     expect(grid(make()).offline).toBe(false)
     ha.setStatus({ state: 'connecting', reason: null })

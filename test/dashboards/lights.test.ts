@@ -61,6 +61,15 @@ describe('tableau Lumières', () => {
     expect(grid(make()).keys[4]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible' })
   })
 
+  it('unknown_state_tile_is_unavailable', () => {
+    ha.setEntity('light.indispo', 'unknown', { friendly_name: 'Inconnue', supported_color_modes: ['brightness'] })
+    ha.setEntity('light.cuisine', 'unknown', { friendly_name: 'Cuisine', supported_color_modes: ['brightness'] })
+    const v = grid(make())
+    expect(v.keys[4]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible', level: null, label: 'Inconnue' })
+    // Molette knobCL → bande gauche, zone 1.
+    expect(v.left[1]).toMatchObject({ state: 'unavailable', valueText: 'Indisponible', level: null })
+  })
+
   it('lumière éteinte gradable: Éteinte, niveau 0, icône outline', () => {
     ha.setEntity('light.salon', 'off', { friendly_name: 'Salon', brightness: null, supported_color_modes: ['brightness'] })
     expect(grid(make()).keys[0]).toMatchObject({ state: 'off', valueText: 'Éteinte', level: 0, icon: 'mdi:lightbulb-outline' })

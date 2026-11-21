@@ -3,7 +3,7 @@ import type { InputEvent } from '../device/input.js'
 import { formatPct } from '../shared/format.js'
 import { isDimmable } from '../shared/placement.js'
 import { EMPTY_TILE, type TileView } from '../views.js'
-import type { Dashboard, DashboardDeps } from './types.js'
+import { isUnavailableState, type Dashboard, type DashboardDeps } from './types.js'
 
 export const DIM_STEP_PCT = 5
 const KEY_COUNT = 12
@@ -27,7 +27,7 @@ export function createLightsDashboard(cfg: LightsDashboard, d: DashboardDeps): D
     const label = slot.label ?? entity.attributes.friendly_name ?? slot.entityId
     const isSwitch = slot.entityId.startsWith('switch.')
     const configuredIcon = slot.icon ?? entity.attributes.icon ?? null
-    if (entity.state === 'unavailable') {
+    if (isUnavailableState(entity.state)) {
       return { ...base, label, icon: configuredIcon, state: 'unavailable', valueText: 'Indisponible', level: null }
     }
     const on = entity.state === 'on'
