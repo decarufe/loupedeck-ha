@@ -46,6 +46,7 @@ describe('serveur de l’éditeur', () => {
   const ed = (): Editor => editor!
   const port = () => Number(new URL(ed().url).port)
   const hostHeader = () => ({ host: `127.0.0.1:${port()}` })
+  const editorHeaders = () => ({ ...hostHeader(), 'x-loupedeck-editor': '1' })
   /** Vraie requête HTTP (fastify.inject ne se charge pas sous vmThreads) ; l'en-tête Host est modifiable. */
   const request = (method: string, url: string, o: { headers?: Record<string, string>; payload?: unknown } = {}) =>
     new Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; rawPayload: Buffer; body: string; json: () => any }>((resolve, reject) => {
@@ -63,8 +64,8 @@ describe('serveur de l’éditeur', () => {
       req.on('error', reject)
       req.end(data)
     })
-  const put = (payload: unknown) => request('PUT', '/api/config', { payload })
-  const post = (url: string) => request('POST', url)
+  const put = (payload: unknown) => request('PUT', '/api/config', { payload, headers: editorHeaders() })
+  const post = (url: string) => request('POST', url, { headers: editorHeaders() })
   const get = (url: string, headers: Record<string, string> = hostHeader()) => request('GET', url, { headers })
   const body = (cfg: AppConfig, extra: object = {}) => {
     const { ha: h, ...rest } = structuredClone(cfg)
@@ -165,7 +166,7 @@ describe('serveur de l’éditeur', () => {
     const res = await put(body(store.get(), { buttons: [] }))
     expect(res.statusCode).toBe(400)
     expect(res.json().issues.length).toBeGreaterThan(0)
-    const bad = await request('PUT', '/api/config', { payload: '[1]' })
+    const bad = await request('PUT', '/api/config', { payload: '[1]', headers: editorHeaders() })
     expect(bad.statusCode).toBe(400)
   })
 
@@ -286,6 +287,79 @@ describe('serveur de l’éditeur', () => {
     expect((await get('/assets/a.js')).body).toBe('console.log(1)')
     expect((await get('/tableaux/3')).body).toContain('EDITEUR')
     expect((await get('/api/inconnu')).statusCode).toBe(404)
+  })
+
+  it('csrf_origin_and_custom_header', async () => {
+    await start()
+    const evil = { ...hostHeader(), origin: 'https://evil.example' }
+    const good = { ...hostHeader(), origin: `http://127.0.0.1:${port()}` }
+    expect((await get('/api/config', evil)).statusCode).toBe(403)
+    expect((await get('/api/config', good)).statusCode).toBe(200)
+    expect((await get('/api/config', { ...hostHeader(), origin: `http://localhost:${port()}` })).statusCode).toBe(200)
+    expect((await request('PUT', '/api/config', { payload: body(store.get()), headers: evil })).statusCode).toBe(403)
+    expect((await request('POST', '/api/config/undo', { headers: evil })).statusCode).toBe(403)
+    expect((await request('POST', '/api/config/undo', { headers: { ...evil, 'x-loupedeck-editor': '1' } })).statusCode).toBe(403)
+    // Ni Origin ni en-tête personnalisé : refusé ; avec l'un ou l'autre : accepté.
+    expect((await request('POST', '/api/config/undo', { headers: hostHeader() })).statusCode).toBe(403)
+    expect((await request('PUT', '/api/config', { payload: body(store.get()), headers: hostHeader() })).statusCode).toBe(403)
+    expect((await request('POST', '/api/config/undo', { headers: editorHeaders() })).statusCode).toBe(200)
+    expect((await request('PUT', '/api/config', { payload: body(store.get()), headers: good })).statusCode).toBe(200)
+    const ws = new WebSocket(`ws://127.0.0.1:${port()}/api/live`, { headers: { origin: 'https://evil.example' } })
+    const code = await new Promise<number>((resolve) => {
+      ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0))
+      ws.on('open', () => resolve(101))
+      ws.on('error', () => {})
+    })
+    expect(code).toBe(403)
+    ws.terminate()
+  })
+
+  it('static_traversal_guard', async () => {
+    await fs.mkdir(statics, { recursive: true })
+    await fs.writeFile(path.join(statics, 'index.html'), '<html>EDITEUR</html>')
+    await fs.writeFile(path.join(dir, 'secret.txt'), 'TOPSECRET')
+    await fs.mkdir(path.join(dir, 'dist2'))
+    await fs.writeFile(path.join(dir, 'dist2', 'x.txt'), 'TOPSECRET')
+    await start()
+    for (const url of ['/..%2f..%2fsecret.txt', '/%2e%2e/secret.txt', '/..%5c..%5csecret.txt', '/../secret.txt', '/..%2fdist2%2fx.txt', '/%2e%2e%2fdist2/x.txt', '/assets/..%2f..%2f..%2fsecret.txt']) {
+      const res = await get(url)
+      expect(res.body, url).not.toContain('TOPSECRET')
+      expect([200, 400, 403, 404], url).toContain(res.statusCode)
+    }
+  })
+
+  it('put_requires_json_content_type', async () => {
+    await start()
+    const res = await request('PUT', '/api/config', { payload: JSON.stringify(body(store.get())), headers: { ...editorHeaders(), 'content-type': 'text/plain' } })
+    expect(res.statusCode).toBe(415)
+  })
+
+  it('put_url_change_requires_new_token', async () => {
+    await start()
+    const cfg = body(store.get())
+    cfg.ha.url = 'https://autre.example'
+    let res = await put(cfg)
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Saisissez à nouveau le jeton pour une nouvelle adresse Home Assistant')
+    expect(store.get().ha.token).toBe('SECRET123')
+    res = await put({ ...cfg, newToken: 'AUTRE' })
+    expect(res.statusCode).toBe(200)
+    expect(store.get().ha).toMatchObject({ url: 'https://autre.example', token: 'AUTRE' })
+    // Même adresse à un slash final ou des espaces près : jeton conservé.
+    const same = body(store.get())
+    same.ha.url = ` ${store.get().ha.url}/ `
+    expect((await put(same)).statusCode).toBe(200)
+    expect(store.get().ha.token).toBe('AUTRE')
+  })
+
+  it('put_does_not_hang_when_entity_list_never_resolves', async () => {
+    await ed()?.close()
+    editor = await startEditorServer({
+      store, ha: () => ha, navigator: () => nav, device: () => link, port: 0, staticDir: statics, log: silent, entityTimeoutMs: 50,
+    })
+    vi.spyOn(ha, 'listEntityInfo').mockReturnValue(new Promise(() => {}))
+    const res = await put(body(store.get()))
+    expect(res.statusCode).toBe(200)
   })
 
   describe('/api/live', () => {

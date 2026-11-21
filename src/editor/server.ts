@@ -28,6 +28,8 @@ export interface EditorServerDeps {
   port: number
   staticDir: string
   log: Logger
+  /** Délai maximal de la liste des entités lors d'un PUT (défaut 3000 ms). */
+  entityTimeoutMs?: number
 }
 
 export interface EditorServer {
@@ -113,8 +115,17 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     return names.some((n) => host === n || host === `${n}:${boundPort}`)
   }
 
+  const allowedOrigin = (origin: string): boolean =>
+    [HOST, 'localhost'].some((n) => origin === `http://${n}:${boundPort}`)
+
   app.addHook('onRequest', async (req, reply) => {
     if (!allowedHost(req.headers.host)) return reply.code(403).send({ error: 'Hôte non autorisé' })
+    const origin = req.headers.origin
+    // Protège du CSRF et du détournement du WebSocket par un autre site (le Host seul ne suffit pas).
+    if (origin !== undefined && !allowedOrigin(origin)) return reply.code(403).send({ error: 'Origine non autorisée' })
+    if (req.method !== 'GET' && req.method !== 'HEAD' && origin === undefined && req.headers['x-loupedeck-editor'] !== '1') {
+      return reply.code(403).send({ error: 'Requête non autorisée' })
+    }
   })
 
   await app.register(fastifyWebsocket)
@@ -129,6 +140,9 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
 
   app.put('/api/config', async (req, reply) => {
     const bad = (error: string, issues?: string[]) => reply.code(400).send(issues ? { error, issues } : { error })
+    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+      return reply.code(415).send({ error: 'Content-Type application/json requis' })
+    }
     const input = req.body
     if (!isRecord(input)) return bad('Corps de requête invalide', ['(racine) : objet attendu'])
     if ('token' in input || (isRecord(input.ha) && 'token' in input.ha)) {
@@ -137,6 +151,11 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     const { newToken, hasToken: _hasToken, loadWarning: _loadWarning, ...rest } = input
     if (newToken !== undefined && typeof newToken !== 'string') return bad('Corps de requête invalide', ['newToken : texte attendu'])
     const trimmed = (newToken ?? '').trim()
+    const normUrl = (u: unknown) => (typeof u === 'string' ? u.trim().replace(/\/+$/, '') : u)
+    const urlChanged = isRecord(rest.ha) && normUrl(rest.ha.url) !== normUrl(d.store.get().ha.url)
+    if (urlChanged && trimmed === '') {
+      return bad('Saisissez à nouveau le jeton pour une nouvelle adresse Home Assistant')
+    }
     const token = trimmed !== '' ? trimmed : d.store.get().ha.token
     const candidate = { ...rest, ha: isRecord(rest.ha) ? { ...rest.ha, token } : rest.ha }
 
@@ -145,9 +164,15 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
 
     const known = new Map<string, EntityInfo>()
     try {
-      for (const e of await d.ha().listEntityInfo()) known.set(e.entityId, e)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('délai dépassé')), d.entityTimeoutMs ?? 3000) })
+      try {
+        for (const e of await Promise.race([d.ha().listEntityInfo(), timeout])) known.set(e.entityId, e)
+      } finally {
+        clearTimeout(timer)
+      }
     } catch {
-      // Home Assistant injoignable : aucune entité connue, le placement est accepté.
+      // Home Assistant injoignable ou trop lent : aucune entité connue, le placement est accepté.
     }
     const placement = placementIssues(parsed.data, known)
     if (placement.length > 0) return bad(placement.join(' ; '), placement)
