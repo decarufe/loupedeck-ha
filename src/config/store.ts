@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Logger } from '../log.js'
+import { writeFileAtomic, chmodBestEffort } from "./atomic.js"
 import { appConfigSchema, defaultConfig, type AppConfig } from './schema.js'
 
 const MAX_HISTORY = 50
@@ -32,7 +33,7 @@ export class ConfigStore {
   ) {}
 
   static async open(dir: string, log: Logger): Promise<ConfigStore> {
-    await fs.mkdir(dir, { recursive: true })
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 })
     const file = path.join(dir, 'config.json')
     let raw: string | null = null
     try {
@@ -40,6 +41,7 @@ export class ConfigStore {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
     }
+    if (raw !== null) await chmodBestEffort(file, 0o600)
     if (raw === null) {
       const store = new ConfigStore(file, defaultConfig(), null, log)
       await store.write(store.current)
@@ -52,6 +54,7 @@ export class ConfigStore {
       const stamp = new Date().toISOString().replaceAll(':', '-')
       const quarantine = path.join(dir, `config.invalid-${stamp}.json`)
       await fs.rename(file, quarantine)
+      await chmodBestEffort(quarantine, 0o600)
       const warning = `Le fichier de configuration était invalide (${(e as Error).message}) ; il a été mis de côté dans ${path.basename(quarantine)}.`
       log.warn(warning)
       const store = new ConfigStore(file, defaultConfig(), warning, log)
@@ -103,8 +106,6 @@ export class ConfigStore {
   }
 
   private async write(cfg: AppConfig): Promise<void> {
-    const tmp = `${this.file}.tmp`
-    await fs.writeFile(tmp, JSON.stringify(cfg, null, 2))
-    await fs.rename(tmp, this.file)
+    await writeFileAtomic(this.file, JSON.stringify(cfg, null, 2))
   }
 }

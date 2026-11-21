@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { writeFileAtomic } from './atomic.js'
 
 export class StateStore {
   private constructor(private readonly file: string, private active: number) {}
@@ -22,9 +23,7 @@ export class StateStore {
 
   async setActiveButton(i: number): Promise<void> {
     this.active = i
-    const tmp = `${this.file}.tmp`
-    await fs.mkdir(path.dirname(this.file), { recursive: true })
-    await fs.writeFile(tmp, JSON.stringify({ activeButton: i }))
-    await fs.rename(tmp, this.file)
+    await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 })
+    await writeFileAtomic(this.file, JSON.stringify({ activeButton: i }))
   }
 }

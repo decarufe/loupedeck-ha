@@ -17,7 +17,7 @@ describe('StateStore', () => {
     await s.setActiveButton(5)
     expect(s.activeButton()).toBe(5)
     expect((await StateStore.open(dir)).activeButton()).toBe(5)
-    expect(await fs.readdir(dir)).not.toContain('state.json.tmp')
+    expect((await fs.readdir(dir)).filter(f => f.endsWith('.tmp'))).toEqual([])
   })
   it('restarts from 0 when the file is corrupt', async () => {
     await fs.writeFile(path.join(dir, 'state.json'), '{oops')

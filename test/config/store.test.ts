@@ -73,7 +73,7 @@ describe('ConfigStore', () => {
     const s = await ConfigStore.open(dir, log)
     const next = withUrl(s.get(), 'http://10.0.0.5:8123')
     await s.update(next)
-    expect(await fs.readdir(dir)).not.toContain('config.json.tmp')
+    expect((await fs.readdir(dir)).filter(f => f.endsWith('.tmp'))).toEqual([])
     expect(JSON.parse(await fs.readFile(file(), 'utf8'))).toEqual(next)
     expect(s.get()).toEqual(next)
   })
