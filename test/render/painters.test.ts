@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createCanvas } from '@napi-rs/canvas'
+import { keyRect } from '../../src/device/regions.js'
 import { createSurface, type Surface } from '../../src/render/surface.js'
 import { paint, COLORS } from '../../src/render/painters.js'
 import { EMPTY_TILE, type GridView, type TileView, type WeatherView, type FullView } from '../../src/views.js'
@@ -144,5 +145,84 @@ describe('painters (corrections)', () => {
     await paint(s, grid())
     const all = s.ctx.getImageData(60, 0, 90, 90).data
     expect(all.every((v, i) => i % 4 === 3 || v === 0)).toBe(true)
+  })
+})
+
+describe('painters (aucun texte sur une frontière de case)', () => {
+  const VX = [60, 150, 240, 330, 420]
+  const HY = [90, 180]
+  /** Pixels des bandes de 2 px centrées sur les frontières, filtrés par `keep` (r,g,b). */
+  function boundaryHits(s: Surface, keep: (r: number, g: number, b: number) => boolean): string[] {
+    const hits: string[] = []
+    const d = s.ctx.getImageData(0, 0, 480, 270).data
+    const test = (x: number, y: number) => {
+      const i = (y * 480 + x) * 4
+      if (keep(d[i]!, d[i + 1]!, d[i + 2]!)) hits.push(`${x},${y}`)
+    }
+    for (const bx of VX) for (const x of [bx - 1, bx]) for (let y = 0; y < 270; y++) test(x, y)
+    for (const by of HY) for (const y of [by - 1, by]) for (let x = 60; x < 420; x++) test(x, y)
+    return hits
+  }
+  const nonBlack = (r: number, g: number, b: number) => r + g + b > 0
+  // Les fonds de tuile colorés touchent légitimement les frontières : sur les grilles on ne
+  // regarde que les pixels clairs (luminance > 128), c'est-à-dire le texte sur fond sombre.
+  const light = (r: number, g: number, b: number) => 0.299 * r + 0.587 * g + 0.114 * b > 128
+
+  const weather: WeatherView = {
+    kind: 'weather',
+    current: { icon: 'mdi:weather-sunny', temperature: '19,5 °C', apparent: 'Ressenti 18,0 °C', condition: 'Ensoleillé avec quelques passages nuageux' },
+    days: Array.from({ length: 8 }, (_, i) => ({ label: `Lun ${i}`, icon: 'mdi:weather-cloudy', high: '20°', low: '10°' })),
+    message: null,
+    offline: false,
+  }
+  const msg = 'Aucune entité météo configurée dans la configuration'
+  const darkTile = tile({ state: 'off', label: 'Un libellé extrêmement long qui déborde', valueText: 'Valeur très très longue' })
+
+  it('weather_current_and_days_stay_off_borders', async () => {
+    const s = createSurface()
+    await paint(s, weather)
+    expect(boundaryHits(s, nonBlack)).toEqual([])
+  })
+  it('weather_message_stays_off_borders', async () => {
+    const s = createSurface()
+    await paint(s, { ...weather, current: null, days: [], message: msg })
+    expect(boundaryHits(s, nonBlack)).toEqual([])
+  })
+  it('full_message_stays_off_borders', async () => {
+    const s = createSurface()
+    await paint(s, { kind: 'full', image: null, message: msg, stale: false, offline: false })
+    expect(boundaryHits(s, nonBlack)).toEqual([])
+  })
+  it('offline_grid_text_stays_off_borders', async () => {
+    const s = createSurface()
+    const keys = Array.from({ length: 12 }, () => darkTile)
+    const strip = [darkTile, darkTile, darkTile]
+    await paint(s, grid({ keys, left: strip, right: strip, offline: true }))
+    expect(boundaryHits(s, light)).toEqual([])
+  })
+  it('weather_message_is_inside_key5', async () => {
+    const s = createSurface()
+    await paint(s, { ...weather, current: null, days: [], message: msg })
+    const d = s.ctx.getImageData(0, 0, 480, 270).data
+    const k = keyRect(5)
+    let lit = 0
+    for (let y = 0; y < 270; y++) for (let x = 0; x < 480; x++) {
+      const i = (y * 480 + x) * 4
+      if (d[i]! + d[i + 1]! + d[i + 2]! === 0) continue
+      lit++
+      expect(x >= k.x + 4 && x < k.x + k.width - 4 && y >= k.y + 4 && y < k.y + k.height - 4).toBe(true)
+    }
+    expect(lit).toBeGreaterThan(50)
+  })
+  it('weather_current_one_item_per_key', async () => {
+    const s = createSurface()
+    await paint(s, { ...weather, days: [] })
+    for (let i = 0; i < 4; i++) {
+      const k = keyRect(i)
+      const d = s.ctx.getImageData(k.x, k.y, k.width, k.height).data
+      let lit = 0
+      for (let j = 0; j < d.length; j += 4) if (d[j]! + d[j + 1]! + d[j + 2]! > 0) lit++
+      expect(lit).toBeGreaterThan(20)
+    }
   })
 })

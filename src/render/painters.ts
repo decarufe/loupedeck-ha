@@ -67,23 +67,27 @@ function offlineBadge(s: Surface): void {
 
 // ---------- grille ----------
 
-/** Libellé d'une tuile vide : gris, centré, sur au plus 3 lignes (césure aux espaces), chaque ligne tronquée avec « … ». */
-function paintEmptyLabel(ctx: SKRSContext2D, r: Rect, label: string, compact: boolean): void {
-  const size = compact ? 10 : 12
+/** Texte replié dans une case : centré, au plus 3 lignes (césure aux espaces), chaque ligne tronquée avec « … ». */
+function paintWrapped(ctx: SKRSContext2D, r: Rect, text: string, size: number, color: string): void {
   const maxW = r.width - 8
   ctx.font = `${size}px ${FONT}`
   const lines: string[] = []
   let cur = ''
-  for (const word of label.split(/\s+/).filter(Boolean)) {
+  for (const word of text.split(/\s+/).filter(Boolean)) {
     const next = cur ? `${cur} ${word}` : word
     if (!cur || ctx.measureText(next).width <= maxW) cur = next
     else { lines.push(cur); cur = word }
   }
   if (cur) lines.push(cur)
-  if (lines.length > 3) lines.splice(3, lines.length - 3, lines.slice(2).join(' '))
+  if (lines.length > 3) lines.splice(2, lines.length - 2, lines.slice(2).join(' '))
   const lh = size + 4
   const top = r.y + r.height / 2 - (lines.length * lh) / 2 + lh / 2
-  lines.forEach((line, i) => drawText(ctx, line, r.x + r.width / 2, top + i * lh, maxW, `${size}px ${FONT}`, '#9E9E9E', 'center'))
+  lines.forEach((line, i) => drawText(ctx, line, r.x + r.width / 2, top + i * lh, maxW, `${size}px ${FONT}`, color, 'center'))
+}
+
+/** Libellé d'une tuile vide : gris, centré, replié. */
+function paintEmptyLabel(ctx: SKRSContext2D, r: Rect, label: string, compact: boolean): void {
+  paintWrapped(ctx, r, label, compact ? 10 : 12, '#9E9E9E')
 }
 
 function paintTile(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): void {
@@ -151,17 +155,34 @@ function paintWeather(s: Surface, v: WeatherView): void {
   ctx.fillStyle = COLORS.empty
   ctx.fillRect(0, 0, SCREEN.width, SCREEN.height)
 
-  // rangée 0 : conditions actuelles (x 60, 360 × 90)
+  // rangée 0 : une information par case (aucun texte à cheval sur une frontière)
   if (v.current) {
     const c = v.current
-    drawIcon(ctx, c.icon, 76, 13, 64, '#FFFFFF')
-    drawText(ctx, c.temperature, 156, 26, 255, `bold 32px ${FONT}`, '#FFFFFF', 'left')
-    drawText(ctx, c.condition, 156, 56, 255, `14px ${FONT}`, LIGHT, 'left')
-    if (c.apparent) drawText(ctx, c.apparent, 156, 75, 255, `12px ${FONT}`, GRAY, 'left')
+    const k0 = keyRect(0)
+    drawIcon(ctx, c.icon, k0.x + (k0.width - 56) / 2, k0.y + (k0.height - 56) / 2, 56, '#FFFFFF')
+
+    const k1 = keyRect(1)
+    let size = 32
+    ctx.font = `bold ${size}px ${FONT}`
+    while (size > 12 && ctx.measureText(c.temperature).width > k1.width - 8) {
+      size -= 2
+      ctx.font = `bold ${size}px ${FONT}`
+    }
+    drawText(ctx, c.temperature, k1.x + k1.width / 2, k1.y + k1.height / 2, k1.width - 8, `bold ${size}px ${FONT}`, '#FFFFFF', 'center')
+
+    paintWrapped(ctx, keyRect(2), c.condition, 13, LIGHT)
+
+    if (c.apparent) {
+      const k3 = keyRect(3)
+      const cx = k3.x + k3.width / 2
+      const value = c.apparent.replace(/^Ressenti\s*/i, '')
+      drawText(ctx, 'Ressenti', cx, k3.y + 33, k3.width - 8, `12px ${FONT}`, GRAY, 'center')
+      drawText(ctx, value, cx, k3.y + 55, k3.width - 8, `bold 14px ${FONT}`, LIGHT, 'center')
+    }
   }
 
   if (v.message) {
-    drawText(ctx, v.message, 240, 180, 340, `14px ${FONT}`, LIGHT, 'center')
+    paintWrapped(ctx, keyRect(5), v.message, 12, LIGHT)
   } else {
     for (let i = 0; i < 8; i++) {
       const d = v.days[i]
@@ -205,7 +226,7 @@ async function paintFull(s: Surface, v: FullView): Promise<void> {
   }
 
   if (!drawn) {
-    drawText(ctx, v.message ?? 'Image non disponible', SCREEN.width / 2, SCREEN.height / 2, 440, `18px ${FONT}`, '#FFFFFF', 'center')
+    paintWrapped(ctx, keyRect(5), v.message ?? 'Image non disponible', 12, '#FFFFFF')
   }
   if (v.stale || v.offline) desaturate(s)
 }
