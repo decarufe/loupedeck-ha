@@ -7,6 +7,9 @@ import { MockHaServer } from '../fakes/mock-ha-server.js'
 
 const GOOD = 'bon-jeton-secret-1234567890'
 const BAD = 'mauvais-jeton-secret-0987654321'
+// Jeton collé avec un retour à la ligne au milieu (JWT replié).
+const NL_PART1 = 'eyJhbGciOiJIUzI1NiJ9-PARTIE-UNE'
+const NL_PART2 = 'eyJzdWIiOiJsb3VwZWRlY2sifQ-PARTIE-DEUX'
 
 /** Tous les appels au journal, sur l'ensemble des scénarios (vérifiés par token_never_logged). */
 const logCalls: unknown[][] = []
@@ -246,11 +249,89 @@ describe('HaClient', () => {
     await expect(c.callService('light', 'toggle')).rejects.toThrow('Home Assistant hors ligne')
   })
 
+  it('token_with_newline_is_invalid_config_and_never_leaks', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { token: `${NL_PART1}\n${NL_PART2}` })
+    const err = await c.fetchCameraImage('camera.porte', { width: 480, height: 270 }).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(CameraImageError)
+    const text = `${(err as Error).message}\n${(err as Error).stack}`
+    expect(text).not.toContain(NL_PART1)
+    expect(text).not.toContain(NL_PART2)
+    c.start()
+    await vi.waitFor(() => expect(c.status()).toEqual({ state: 'offline', reason: 'auth' }), waitOpts)
+    expect(server.connections).toBe(0)
+  })
+
+  it('camera_network_error_uses_fixed_message', async () => {
+    const server = await startServer()
+    const url = server.url
+    await server.close()
+    servers = servers.filter((s) => s !== server)
+    const c = makeClient(server, { url })
+    const err = await c.fetchCameraImage('camera.porte', { width: 480, height: 270 }).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(CameraImageError)
+    expect((err as Error).message).toBe('Caméra injoignable')
+  })
+
+  it('token_surrounding_whitespace_is_trimmed', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { token: `  ${GOOD}\r\n` })
+    c.start()
+    await vi.waitFor(() => expect(c.status()).toEqual({ state: 'online', reason: null }), waitOpts)
+    await c.fetchCameraImage('camera.porte', { width: 480, height: 270 })
+    expect(server.httpRequests.at(-1)!.headers.authorization).toBe(`Bearer ${GOOD}`)
+  })
+
+  it('throwing_status_listener_does_not_stop_retries', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (r: unknown) => { unhandled.push(r) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      const server = await startServer()
+      server.refuse = true
+      const c = makeClient(server, { retryDelayMs: 30 })
+      c.onStatus(() => { throw new Error('écouteur en panne') })
+      const statuses: HaStatus[] = []
+      c.onStatus((s) => { statuses.push(s) })
+      c.start()
+      await vi.waitFor(() => expect(server.refused).toBeGreaterThanOrEqual(2), waitOpts)
+      server.refuse = false
+      await vi.waitFor(() => expect(c.status()).toEqual({ state: 'online', reason: null }), waitOpts)
+      expect(statuses).toEqual([{ state: 'offline', reason: 'network' }, { state: 'online', reason: null }])
+      // Les événements de la connexion (disconnected/ready) passent aussi par l'écouteur fautif.
+      server.dropAll()
+      await vi.waitFor(() => {
+        expect(statuses).toHaveLength(4)
+        expect(c.status()).toEqual({ state: 'online', reason: null })
+      }, waitOpts)
+      await sleep(20)
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('throwing_entities_listener_does_not_break_others', async () => {
+    const server = await startServer()
+    const c = await onlineClient(server)
+    c.onEntities(() => { throw new Error('écouteur en panne') })
+    const seen: number[] = []
+    c.onEntities((e) => { seen.push(e['light.salon'].attributes.brightness) })
+    server.pushState('light.salon', 'on', { brightness: 77 })
+    await vi.waitFor(() => expect(seen).toContain(77), waitOpts)
+    server.pushState('light.salon', 'on', { brightness: 78 })
+    await vi.waitFor(() => expect(seen).toContain(78), waitOpts)
+    expect(c.status()).toEqual({ state: 'online', reason: null })
+    await c.callService('light', 'toggle', undefined, { entity_id: 'light.salon' })
+  })
+
   it('token_never_logged', () => {
     expect(logCalls.length).toBeGreaterThan(0)
     const dump = JSON.stringify(logCalls)
     expect(dump).not.toContain(GOOD)
     expect(dump).not.toContain(BAD)
+    expect(dump).not.toContain(NL_PART1)
+    expect(dump).not.toContain(NL_PART2)
   })
 })
 

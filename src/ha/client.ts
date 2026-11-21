@@ -54,12 +54,50 @@ function describe(err: unknown): string {
   return String(err)
 }
 
-/** Les rejets de la librairie sont des objets `{code, message}` : on les convertit en Error lisible. */
-function toError(err: unknown): Error {
-  if (err instanceof Error) return err
-  if (isConnectionLost(err)) return new Error(OFFLINE_MESSAGE)
-  return new Error(`Home Assistant : ${describe(err)}`)
+type Scrub = (s: string) => string
+
+/**
+ * Masque le jeton (entier, et chacun de ses morceaux s'il contient des retours à la ligne) dans un texte.
+ * Défense en profondeur : appliqué à tout message d'erreur produit et à tout appel au journal.
+ */
+function makeScrubber(token: string): Scrub {
+  const secrets = [token, ...token.split(/[\r\n\0]+/)].filter((s) => s.length >= 4).sort((a, b) => b.length - a.length)
+  return (s) => secrets.reduce((acc, secret) => acc.split(secret).join('[jeton masqué]'), s)
 }
+
+function scrubbingLogger(log: Logger, scrub: Scrub): Logger {
+  const clean = (o?: object): object | undefined => {
+    if (o === undefined) return undefined
+    try {
+      return JSON.parse(JSON.stringify(o, (_k, v: unknown) => (typeof v === 'string' ? scrub(v) : v))) as object
+    } catch {
+      return { note: 'détails non journalisables' }
+    }
+  }
+  return {
+    debug: (m, o) => log.debug(scrub(m), clean(o)),
+    info: (m, o) => log.info(scrub(m), clean(o)),
+    warn: (m, o) => log.warn(scrub(m), clean(o)),
+    error: (m, o) => log.error(scrub(m), clean(o)),
+  }
+}
+
+/**
+ * Les rejets de la librairie sont des objets `{code, message}` : on les convertit en Error lisible.
+ * Toujours une nouvelle Error au message nettoyé, pour qu'aucune pile d'origine ne transporte le jeton.
+ */
+function toError(err: unknown, scrub: Scrub): Error {
+  if (isConnectionLost(err)) return new Error(OFFLINE_MESSAGE)
+  if (err instanceof Error && err.message === OFFLINE_MESSAGE) return new Error(OFFLINE_MESSAGE)
+  return new Error(`Home Assistant : ${scrub(describe(err))}`)
+}
+
+/** Fetch interrompu par `AbortSignal.timeout` (TimeoutError) ou une annulation. */
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')
+}
+
+const INVALID_TOKEN_CHARS = /[\r\n\0]/
 
 /**
  * `createSocket` pour `createConnection`, basé sur le paquet `ws` (Node).
@@ -162,6 +200,9 @@ export class HaClient implements HaPort {
   private states: Record<string, HaEntity> = {}
   private readonly entityListeners = new Set<(e: Record<string, HaEntity>) => void>()
   private readonly statusListeners = new Set<(s: HaStatus) => void>()
+  private readonly scrub: Scrub
+  /** Jeton contenant CR/LF/NUL après rognage : configuration invalide, on ne l'envoie jamais. */
+  private readonly tokenInvalid: boolean
   private retryTimer: NodeJS.Timeout | null = null
   private started = false
   private closed = false
@@ -169,9 +210,11 @@ export class HaClient implements HaPort {
   constructor(o: HaClientOptions) {
     this.base = stripTrailingSlash(o.url.trim())
     this.wsUrl = toWebSocketUrl(this.base)
-    this.token = o.token
+    this.token = o.token.trim()
+    this.tokenInvalid = INVALID_TOKEN_CHARS.test(this.token)
+    this.scrub = makeScrubber(this.token)
     this.allowSelfSigned = o.allowSelfSigned
-    this.log = o.log
+    this.log = scrubbingLogger(o.log, this.scrub)
     this.retryDelayMs = o.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS
     this.dispatcher = o.allowSelfSigned ? new Agent({ connect: { rejectUnauthorized: false } }) : undefined
   }
@@ -179,7 +222,12 @@ export class HaClient implements HaPort {
   start(): void {
     if (this.started || this.closed) return
     this.started = true
-    void this.connect()
+    if (this.tokenInvalid) {
+      this.log.error('Jeton Home Assistant invalide (retour à la ligne ou caractère nul) : corrigez-le dans la configuration')
+      this.setStatus({ state: 'offline', reason: 'auth' })
+      return
+    }
+    this.runConnect()
   }
 
   status(): HaStatus {
@@ -205,7 +253,7 @@ export class HaClient implements HaPort {
     try {
       await haCallService(conn, domain, service, data, target)
     } catch (err) {
-      throw toError(err)
+      throw toError(err, this.scrub)
     }
   }
 
@@ -215,7 +263,7 @@ export class HaClient implements HaPort {
     try {
       res = (await haCallService(conn, 'weather', 'get_forecasts', { type }, { entity_id: entityId }, true)) as typeof res
     } catch (err) {
-      throw toError(err)
+      throw toError(err, this.scrub)
     }
     const list = res?.response?.[entityId]?.forecast
     if (!Array.isArray(list)) throw new Error(`Prévisions absentes de la réponse pour ${entityId}`)
@@ -239,7 +287,7 @@ export class HaClient implements HaPort {
         conn.sendMessagePromise<RegistryArea[]>({ type: 'config/area_registry/list' }),
       ])
     } catch (err) {
-      throw toError(err)
+      throw toError(err, this.scrub)
     }
     const regById = new Map(registry.map((r) => [r.entity_id, r]))
     const deviceArea = new Map(devices.map((d) => [d.id, d.area_id ?? null]))
@@ -262,6 +310,7 @@ export class HaClient implements HaPort {
   }
 
   async fetchCameraImage(entityId: string, size: { width: number; height: number }): Promise<Buffer> {
+    if (this.tokenInvalid) throw new CameraImageError('Configuration invalide (jeton)')
     const url = `${this.base}/api/camera_proxy/${encodeURIComponent(entityId)}?width=${size.width}&height=${size.height}`
     try {
       const res = await fetch(url, {
@@ -276,12 +325,13 @@ export class HaClient implements HaPort {
       const type = res.headers.get('content-type') ?? ''
       if (!type.startsWith('image/')) {
         await res.body?.cancel().catch(() => undefined)
-        throw new CameraImageError(`Réponse inattendue pour la caméra ${entityId} (type ${type || 'inconnu'})`)
+        throw new CameraImageError(this.scrub(`Réponse inattendue pour la caméra ${entityId} (type ${type || 'inconnu'})`))
       }
       return Buffer.from(await res.arrayBuffer())
     } catch (err) {
       if (err instanceof CameraImageError) throw err
-      throw new CameraImageError(`Image caméra indisponible pour ${entityId} : ${describe(err)}`)
+      // Jamais le message brut de fetch/undici : il peut recopier la valeur de l'en-tête Authorization.
+      throw new CameraImageError(isTimeout(err) ? "Délai dépassé pour l'image de la caméra" : 'Caméra injoignable')
     }
   }
 
@@ -309,7 +359,24 @@ export class HaClient implements HaPort {
     if (this.closed) return
     if (s.state === this.current.state && s.reason === this.current.reason) return
     this.current = s
-    for (const cb of [...this.statusListeners]) cb(s)
+    this.notify(this.statusListeners, s, 'onStatus')
+  }
+
+  /** Appelle chaque écouteur isolément : une exception est journalisée sans gêner les autres ni la connexion. */
+  private notify<T>(listeners: Set<(v: T) => void>, value: T, kind: string): void {
+    for (const cb of [...listeners]) {
+      try {
+        cb(value)
+      } catch (err) {
+        this.log.error(`Un écouteur ${kind} a levé une exception`, { message: this.scrub(describe(err)) })
+      }
+    }
+  }
+
+  private runConnect(): void {
+    this.connect().catch((err: unknown) => {
+      this.log.error('Erreur inattendue pendant la connexion à Home Assistant', { message: this.scrub(describe(err)) })
+    })
   }
 
   private async connect(): Promise<void> {
@@ -333,8 +400,9 @@ export class HaClient implements HaPort {
       } else {
         this.log.warn(`Home Assistant injoignable, nouvelle tentative toutes les ${this.retryDelayMs} ms`, { url: this.base, reason })
       }
+      // Programmer la nouvelle tentative avant de notifier.
+      this.retryTimer = setTimeout(() => this.runConnect(), this.retryDelayMs)
       this.setStatus({ state: 'offline', reason: 'network' })
-      this.retryTimer = setTimeout(() => void this.connect(), this.retryDelayMs)
       return
     }
     if (this.closed) {
@@ -362,7 +430,7 @@ export class HaClient implements HaPort {
     subscribeEntities(conn, (ents: HassEntities) => {
       if (this.conn !== conn) return
       this.states = ents
-      for (const cb of [...this.entityListeners]) cb(ents)
+      this.notify(this.entityListeners, ents, 'onEntities')
     })
     this.log.info('Connecté à Home Assistant', { url: this.base, haVersion: conn.haVersion })
     this.setStatus({ state: 'online', reason: null })
