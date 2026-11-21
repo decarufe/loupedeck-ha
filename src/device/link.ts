@@ -54,6 +54,8 @@ function errorText(e: unknown): string {
 
 const BUSY_PORT = /access denied|accès refusé|busy|EBUSY|EACCES/i
 const BUSY_HINT = 'La console est peut-être occupée par un autre programme. Fermez le logiciel Loupedeck.'
+/** Un seul délai dépassé arrive au branchement ou au réveil : le conseil n'apparaît qu'au deuxième d'affilée. */
+const BUSY_HINT_AFTER_TIMEOUTS = 2
 
 interface PendingTimer { timer: ReturnType<typeof setTimeout>; reject: (e: Error) => void }
 
@@ -76,6 +78,8 @@ export class DeviceLink {
   private firmwareVersion: string | null = null
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryIndex = 0
+  /** Délais de connexion dépassés d'affilée : le conseil « Fermez le logiciel Loupedeck » attend le deuxième. */
+  private consecutiveTimeouts = 0
   private readonly timers = new Set<PendingTimer>()
 
   private readonly inputCbs = new Set<(e: InputEvent) => void>()
@@ -94,7 +98,7 @@ export class DeviceLink {
     this.log = o.log
     this.connectTimeoutMs = o.connectTimeoutMs ?? 5000
     this.drawTimeoutMs = o.drawTimeoutMs ?? 2000
-    this.retryDelaysMs = o.retryDelaysMs && o.retryDelaysMs.length > 0 ? o.retryDelaysMs : [1000, 2000, 5000, 10000, 30000]
+    this.retryDelaysMs = o.retryDelaysMs && o.retryDelaysMs.length > 0 ? o.retryDelaysMs : [1000, 2000, 5000]
     this.fullFrameThreshold = o.fullFrameThreshold ?? 7
   }
 
@@ -198,8 +202,14 @@ export class DeviceLink {
       if (candidate) this.discard(candidate)
       if (this.stopped) return
       if (err instanceof TimeoutError) {
-        this.log.warn(`Délai de connexion à la console dépassé (${this.connectTimeoutMs} ms). ${BUSY_HINT}`)
+        this.consecutiveTimeouts++
+        if (this.consecutiveTimeouts >= BUSY_HINT_AFTER_TIMEOUTS) {
+          this.log.warn(`Délai de connexion à la console dépassé (${this.connectTimeoutMs} ms). ${BUSY_HINT}`)
+        } else {
+          this.log.warn('La console ne répond pas, nouvel essai…')
+        }
       } else {
+        this.consecutiveTimeouts = 0
         const msg = errorText(err)
         const hint = BUSY_PORT.test(msg) ? ` ${BUSY_HINT}` : ''
         this.log.warn(`Connexion à la console impossible.${hint}`, { erreur: msg })
@@ -211,6 +221,7 @@ export class DeviceLink {
   private onConnected(dev: LoupedeckLike): void {
     this.device = dev
     this.retryIndex = 0
+    this.consecutiveTimeouts = 0
     this.lastSent.clear()
     for (const name of INPUT_EVENTS) {
       dev.on(name, (p) => {

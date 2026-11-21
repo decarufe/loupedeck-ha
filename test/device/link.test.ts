@@ -52,7 +52,10 @@ describe('DeviceLink', () => {
     link.start()
     await vi.advanceTimersByTimeAsync(5000)
     expect(link.status()).toBe('disconnected')
-    expect(log.warn.mock.calls.some(([m]) => String(m).includes('Fermez le logiciel Loupedeck'))).toBe(true)
+    // Premier délai dépassé : message neutre, pas encore de conseil.
+    const texts = () => [...log.warn.mock.calls, ...log.info.mock.calls].map(([m]) => String(m))
+    expect(texts().some((m) => m.includes('La console ne répond pas, nouvel essai'))).toBe(true)
+    expect(texts().some((m) => m.includes('Fermez le logiciel Loupedeck'))).toBe(false)
     expect(d1.callsOf('close')).toHaveLength(1)
     expect(d1.listenerCount('disconnect')).toBe(0)
     expect(created).toHaveLength(1)
@@ -64,13 +67,41 @@ describe('DeviceLink', () => {
     await link.stop()
   })
 
+  it('busy_hint_only_after_two_consecutive_timeouts', async () => {
+    const devices = [new FakeDevice({ connect: 'hang' }), new FakeDevice({ connect: 'hang' }), new FakeDevice()]
+    const { link, log } = setup(devices)
+    const hints = () => log.warn.mock.calls.filter(([m]) => String(m).includes('Fermez le logiciel Loupedeck')).length
+    link.start()
+    await vi.advanceTimersByTimeAsync(5000) // 1er délai dépassé
+    expect(hints()).toBe(0)
+    await vi.advanceTimersByTimeAsync(1000 + 5000) // 2e délai dépassé, consécutif
+    expect(hints()).toBe(1)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(link.status()).toBe('connected')
+    await link.stop()
+  })
+
+  it('timeout_counter_resets_after_another_failure', async () => {
+    const devices = [new FakeDevice({ connect: 'hang' }), new FakeDevice({ connect: 'reject' }), new FakeDevice({ connect: 'hang' })]
+    const { link, log } = setup(devices)
+    link.start()
+    await vi.advanceTimersByTimeAsync(5000) // délai dépassé
+    await vi.advanceTimersByTimeAsync(1000) // échec d'une autre nature
+    await vi.advanceTimersByTimeAsync(2000 + 5000) // délai dépassé, mais pas consécutif
+    // (L'échec « Access denied » donne son propre conseil ; les délais, eux, restent neutres.)
+    const timeoutMsgs = log.warn.mock.calls.map(([m]) => String(m)).filter((m) => m.includes('ne répond pas') || m.includes('Délai de connexion'))
+    expect(timeoutMsgs).toEqual(['La console ne répond pas, nouvel essai…', 'La console ne répond pas, nouvel essai…'])
+    await link.stop()
+  })
+
   it('retry_backoff_caps', async () => {
     const devices = Array.from({ length: 8 }, () => new FakeDevice({ connect: 'reject' }))
     const { link, times, log } = setup(devices)
     link.start()
-    await vi.advanceTimersByTimeAsync(78_000)
+    await vi.advanceTimersByTimeAsync(23_000)
     const gaps = times.slice(1).map((t, i) => t - times[i]!)
-    expect(gaps).toEqual([1000, 2000, 5000, 10000, 30000, 30000])
+    // Plafond à 5 s : le dernier délai se répète.
+    expect(gaps).toEqual([1000, 2000, 5000, 5000, 5000, 5000])
     expect(link.status()).toBe('disconnected')
     expect(log.warn).toHaveBeenCalled()
     expect(devices[0]!.callsOf('close')).toHaveLength(1)
