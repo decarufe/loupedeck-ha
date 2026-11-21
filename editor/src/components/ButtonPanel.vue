@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { emptyDashboard, type DashboardConfig } from '@shared/config/schema'
 import { save, state } from '../store'
+import DashboardEntities from './DashboardEntities.vue'
+import SlotEditor from './SlotEditor.vue'
 
 type Kind = DashboardConfig['type']
 const TYPES: { value: Kind; label: string }[] = [
@@ -67,6 +69,8 @@ function commitOnEnter(e: Event) {
         Couleur
         <input class="color-input" type="color" :value="dashboard.color.toLowerCase()" @change="recolor" />
       </label>
+      <DashboardEntities />
+      <SlotEditor />
     </template>
     <p v-else class="hint">Ce bouton est vide : choisissez un type pour le configurer.</p>
   </section>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 import ButtonPanel from './components/ButtonPanel.vue'
+import EntityPalette from './components/EntityPalette.vue'
 import LiveDevice from './components/LiveDevice.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import { init, state, undo } from './store'
 
 let stop: (() => void) | null = null
@@ -13,7 +15,7 @@ onBeforeUnmount(() => stop?.())
   <main class="app">
     <header class="top">
       <h1>Éditeur Loupedeck</h1>
-      <button type="button" aria-label="Annuler la dernière modification" @click="undo">Annuler</button>
+      <button type="button" class="undo" aria-label="Annuler la dernière modification" @click="undo">Annuler</button>
     </header>
     <p v-if="state.config?.loadWarning" class="banner warning" role="status">{{ state.config.loadWarning }}</p>
     <p v-if="state.error" class="banner error" role="alert">{{ state.error }}</p>
@@ -21,6 +23,8 @@ onBeforeUnmount(() => stop?.())
     <div v-else class="layout">
       <LiveDevice />
       <ButtonPanel />
+      <EntityPalette />
+      <SettingsPanel />
     </div>
   </main>
 </template>

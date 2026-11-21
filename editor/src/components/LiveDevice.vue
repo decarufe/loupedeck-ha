@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { KNOB_IDS } from '@shared/config/schema'
 import { keyRect, stripZoneRect, type Rect } from '@shared/device/regions'
 import { previewUrl } from '../api'
-import { select, state } from '../store'
+import { placeEntity, select, state, type SlotTarget } from '../store'
 
 const SCALE = 1.5
 const W = 480
@@ -26,6 +26,20 @@ const dimmers = computed(() =>
   }),
 )
 
+const sameSlot = (a: SlotTarget | null, b: SlotTarget) =>
+  a !== null && (a.kind === 'key' ? b.kind === 'key' && a.index === b.index : b.kind === 'dimmer' && a.knob === b.knob)
+
+/** Avec une entité en attente (palette), un clic la place ; sinon il sélectionne l'emplacement pour l'éditer. */
+function clickSlot(t: SlotTarget) {
+  if (state.pendingEntity) void placeEntity(t, state.pendingEntity)
+  else state.selectedSlot = sameSlot(state.selectedSlot, t) ? null : t
+}
+
+function dropOn(e: DragEvent, t: SlotTarget) {
+  const id = e.dataTransfer?.getData('application/x-entity-id')
+  if (id) void placeEntity(t, id)
+}
+
 const roundLabel = (i: number) => `Bouton rond ${i + 1}${buttons.value[i] ? ` — ${buttons.value[i]!.name}` : ' — vide'}`
 </script>
 
@@ -38,10 +52,14 @@ const roundLabel = (i: number) => `Bouton rond ${i + 1}${buttons.value[i] ? ` �
         <template v-if="lights">
           <button
             v-for="k in keys" :key="k.i" type="button" class="slot key-slot" :style="k.style"
+            :data-key="k.i" :class="{ selected: sameSlot(state.selectedSlot, { kind: 'key', index: k.i }) }"
+            @click="clickSlot({ kind: 'key', index: k.i })" @dragover.prevent @drop.prevent="dropOn($event, { kind: 'key', index: k.i })"
             :aria-label="`Touche ${k.i + 1}${k.slot ? ` — ${k.slot.label ?? k.slot.entityId}` : ' — vide'}`"
           />
           <button
             v-for="d in dimmers" :key="d.id" type="button" class="slot dimmer-slot" :style="d.style"
+            :data-knob="d.id" :class="{ selected: sameSlot(state.selectedSlot, { kind: 'dimmer', knob: d.id }) }"
+            @click="clickSlot({ kind: 'dimmer', knob: d.id })" @dragover.prevent @drop.prevent="dropOn($event, { kind: 'dimmer', knob: d.id })"
             :aria-label="`Molette ${d.id}${d.slot ? ` — ${d.slot.label ?? d.slot.entityId}` : ' — vide'}`"
           />
         </template>
@@ -66,6 +84,7 @@ const roundLabel = (i: number) => `Bouton rond ${i + 1}${buttons.value[i] ? ` �
 .screen { position: relative; background: #000; border-radius: 4px; flex: none; }
 .preview { width: 100%; height: 100%; display: block; }
 .slot { position: absolute; padding: 0; border: 1px dashed transparent; background: transparent; border-radius: 2px; }
+.slot.selected { border-color: #fff; background: rgba(255, 255, 255, 0.2); }
 .slot:hover, .slot:focus-visible { border-color: #4fc3f7; background: rgba(79, 195, 247, 0.15); }
 .knobs { display: flex; flex-direction: column; justify-content: space-around; align-self: stretch; }
 .knob { width: 44px; height: 44px; border-radius: 50%; background: radial-gradient(#555, #222); border: 2px solid #444; }
