@@ -307,6 +307,62 @@ describe('DeviceLink', () => {
     expect(created).toHaveLength(1)
   })
 
+  it('un connect qui réussit après le délai referme l’appareil orphelin', async () => {
+    const d1 = new FakeDevice({ connect: 'hang' })
+    const d2 = new FakeDevice({ connect: 'hang' })
+    const { link } = setup([d1, d2])
+    link.start()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(d1.callsOf('close')).toHaveLength(1)
+    // Le port finit de s'ouvrir à 5500 ms, après l'abandon (le premier close() était sans effet).
+    await vi.advanceTimersByTimeAsync(500)
+    d1.settleConnect('resolve')
+    await flush()
+    expect(d1.callsOf('close')).toHaveLength(2)
+    expect(link.status()).toBe('disconnected')
+    await link.stop()
+  })
+
+  it('un connect qui échoue après le délai referme aussi l’appareil orphelin', async () => {
+    const d1 = new FakeDevice({ connect: 'hang' })
+    const { link, log } = setup([d1, new FakeDevice({ connect: 'hang' })])
+    link.start()
+    await vi.advanceTimersByTimeAsync(5500)
+    expect(d1.callsOf('close')).toHaveLength(1)
+    const warns = log.warn.mock.calls.length
+    d1.settleConnect('reject')
+    await flush()
+    expect(d1.callsOf('close')).toHaveLength(2)
+    expect(log.warn.mock.calls.length).toBe(warns)
+    await link.stop()
+  })
+
+  it('un connect qui aboutit après stop() referme l’appareil', async () => {
+    const d = new FakeDevice({ connect: 'hang' })
+    const { link } = setup([d])
+    link.start()
+    await flush()
+    await link.stop()
+    expect(d.callsOf('close')).toHaveLength(1)
+    d.settleConnect('resolve')
+    await flush()
+    expect(d.callsOf('close')).toHaveLength(2)
+    expect(link.status()).toBe('disconnected')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('un connect qui échoue après stop() referme l’appareil', async () => {
+    const d = new FakeDevice({ connect: 'hang' })
+    const { link } = setup([d])
+    link.start()
+    await flush()
+    await link.stop()
+    d.settleConnect('reject')
+    await flush()
+    expect(d.callsOf('close')).toHaveLength(2)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('stop() pendant l’attente de reconnexion ne laisse aucun minuteur', async () => {
     const { link, created } = setup([new FakeDevice({ connect: 'reject' })])
     link.start()

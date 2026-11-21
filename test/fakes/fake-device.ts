@@ -16,6 +16,7 @@ export class FakeDevice extends EventEmitter implements LoupedeckLike {
   reconnectInterval = 0
   info = { serial: 'FAKE0001', version: '0.2.5' }
   private held: (() => void)[] = []
+  private connectSettlers: { resolve: () => void; reject: (e: unknown) => void } | null = null
 
   constructor(o: { connect?: ConnectMode; draw?: DrawMode } = {}) {
     super()
@@ -38,9 +39,20 @@ export class FakeDevice extends EventEmitter implements LoupedeckLike {
     for (const res of held) res()
   }
 
+  /** Termine un connect resté pendant (mode 'hang'), comme une ouverture lente du port. */
+  settleConnect(outcome: 'resolve' | 'reject'): void {
+    const s = this.connectSettlers
+    this.connectSettlers = null
+    if (!s) return
+    if (outcome === 'resolve') s.resolve()
+    else s.reject('Invalid handshake response: ')
+  }
+
   connect(): Promise<unknown> {
     this.record('connect', [])
-    if (this.connectMode === 'hang') return new Promise(() => {})
+    if (this.connectMode === 'hang') {
+      return new Promise<void>((resolve, reject) => { this.connectSettlers = { resolve, reject } })
+    }
     // La librairie rejette parfois avec une chaîne plutôt qu'une Error.
     if (this.connectMode === 'reject') return Promise.reject('Opening COM4: Access denied')
     return Promise.resolve()

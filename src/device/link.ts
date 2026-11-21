@@ -172,7 +172,18 @@ export class DeviceLink {
         throw new Error('tentative abandonnée')
       }
       candidate = d
-      await d.connect()
+      // Si la tentative a été abandonnée (délai ou stop()) pendant l'ouverture, le premier close() a pu
+      // être sans effet (port pas encore ouvert) : on referme une fois connect() terminé, quelle qu'en soit l'issue.
+      try {
+        await d.connect()
+      } catch (err) {
+        if (abandoned) this.discard(d)
+        throw err
+      }
+      if (abandoned) {
+        this.discard(d)
+        throw new Error('tentative abandonnée')
+      }
       return d
     })()
     try {
