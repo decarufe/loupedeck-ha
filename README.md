@@ -28,46 +28,48 @@ toute seule.
 Dans Home Assistant : **Profil → Sécurité → Jetons d'accès longue durée → Créer un jeton**. Copiez-le
 tout de suite : il n'est affiché qu'une fois. Le jeton n'est jamais écrit dans les journaux.
 
-### Configuration
+### Configuration : l'éditeur visuel
 
-L'éditeur visuel arrive dans une prochaine version. **Pour l'instant, on modifie la configuration à la main**
-dans `%APPDATA%\loupedeck-ha\config.json`.
+La configuration se fait dans **l'éditeur**, une page web locale servie par l'application :
 
-Ce fichier est **créé avec les valeurs par défaut au premier démarrage** (`pnpm start`, puis Ctrl+C) : un
-tableau Lumières sur le bouton 0, Température sur le 1, Météo sur le 2, quatre Caméras sur les boutons 3 à 6.
-Il suffit ensuite d'y renseigner `ha.url`, `ha.token` et les entités. Voici les parties à modifier pour un
-tableau Lumières avec une seule touche. **Modifiez le fichier généré, ne le remplacez pas par cet extrait** :
-les sections `device` et `editor` et les 8 entrées de `buttons` doivent rester présentes.
+1. Lancez l'application (`pnpm start`, voir plus bas) ;
+2. Ouvrez **<http://127.0.0.1:8765>** dans votre navigateur, ou le raccourci
+   **« Loupedeck HA – Configuration »** du Bureau ou du menu Démarrer (voir
+   [Raccourci vers l'éditeur](#raccourci-vers-léditeur)).
 
-```json
-{
-  "version": 1,
-  "ha": {
-    "url": "http://homeassistant.local:8123",
-    "token": "eyJhbGciOi...votre-jeton...",
-    "allowSelfSigned": false
-  },
-  "buttons": [
-    {
-      "type": "lights",
-      "name": "Lumières",
-      "color": "#FFB300",
-      "keys": [
-        { "entityId": "light.xxx" },
-        null, null, null, null, null, null, null, null, null, null, null
-      ],
-      "dimmers": { "knobTL": null, "knobCL": null, "knobBL": null, "knobTR": null, "knobCR": null, "knobBR": null }
-    }
-  ]
-}
-```
+`pnpm run build` compile **l'application et l'éditeur** ; sans cette étape, la page affiche seulement un
+message d'attente.
+
+Dans l'éditeur :
+
+- **Réglages** : adresse Home Assistant (`http://…` ou `https://…`), jeton, certificat auto-signé,
+  luminosité de la console. Le jeton saisi n'est jamais réaffiché ; changer d'adresse demande de le saisir
+  à nouveau.
+- **Boutons ronds** : cliquez sur un bouton de la Live virtuelle pour choisir le type de tableau, son nom et
+  sa couleur.
+- **Entités** : glissez une entité de la palette sur une touche ou une molette (ou cliquez l'entité, puis
+  l'emplacement). Un dépôt refusé est expliqué. Libellé et icône se modifient dans le panneau de l'emplacement.
+- **Caméras** : entité, **Intervalle (ms)** (250 à 2000, par pas de 250) et **Cadrage** : « Plein écran »
+  (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires).
+- **Annuler** revient à la configuration précédente. Chaque modification est enregistrée et appliquée à la
+  console aussitôt ; l'aperçu suit la console en direct.
+
+Les modifications sont enregistrées dans `%APPDATA%\loupedeck-ha\config.json`, créé avec les valeurs par
+défaut au premier démarrage : Lumières sur le bouton 0, Température sur le 1, Météo sur le 2, quatre Caméras
+sur les boutons 3 à 6.
+
+#### En recours : modifier le fichier à la main
+
+**Application arrêtée** seulement (Ctrl+C, ou fin de la tâche « Loupedeck HA ») : sinon, la prochaine
+modification faite dans l'éditeur écraserait la vôtre. Modifiez le fichier généré sans le remplacer (les
+sections `device` et `editor` et les 8 entrées de `buttons` doivent rester présentes), puis relancez
+l'application.
 
 - `keys` contient toujours **12** emplacements (`null` = touche vide) ; `buttons` en contient toujours **8**.
-- Une touche accepte aussi `"label"` et `"icon"` (ex. `{ "entityId": "light.salon", "label": "Salon", "icon": "mdi:sofa" }`).
-- `https://…` est accepté ; `"allowSelfSigned": true` seulement pour un certificat auto-signé.
+- `ha.url` commence par `http://` ou `https://` ; `"allowSelfSigned": true` seulement pour un certificat
+  auto-signé.
 - Un fichier invalide est mis de côté (`config.invalid-<date>.json`) et remplacé par les valeurs par défaut :
   le journal l'indique.
-- Pour l'instant, redémarrez l'application après avoir modifié le fichier.
 
 ## Lancer
 
@@ -76,11 +78,16 @@ pnpm start
 ```
 
 Les journaux s'affichent dans le terminal et sont aussi écrits dans `%APPDATA%\loupedeck-ha\logs\app.log`.
-Au démarrage, le journal indique le fichier de configuration, l'URL Home Assistant et si un jeton est configuré.
-Ctrl+C arrête proprement l'application. `LOG_LEVEL=debug` donne plus de détails.
+Au démarrage, le journal indique le fichier de configuration, l'URL Home Assistant, si un jeton est configuré
+et l'adresse de l'éditeur. Ctrl+C arrête proprement l'application. Pour plus de détails dans le journal :
+
+```powershell
+$env:LOG_LEVEL='debug'; pnpm start
+```
 
 Sans jeton, ou si Home Assistant est injoignable, la console affiche ses tableaux grisés avec l'indicateur
-« HA hors ligne » ; la reconnexion est automatique.
+« HA hors ligne » ; la reconnexion est automatique (une connexion qui ne répond plus est détectée en
+40 s au plus).
 
 ## Démarrage automatique avec Windows
 
@@ -90,14 +97,19 @@ powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Install
 
 Crée la tâche planifiée **« Loupedeck HA »**, lancée à l'ouverture de votre session, sans fenêtre
 (`scripts\launch-hidden.vbs` exécute `node dist\main.js` depuis la racine du dépôt ; `node` doit donc être
-dans le PATH). Pour la retirer :
+dans le PATH).
+
+**Relance après un plantage** : si l'application s'arrête sur une erreur (code de sortie différent de 0),
+`launch-hidden.vbs` la relance après 5 s, autant de fois que nécessaire. Un arrêt volontaire (Ctrl+C,
+SIGINT ou SIGTERM : code de sortie 0) arrête la boucle.
+
+Pour retirer la tâche :
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Uninstall
 ```
 
-Après une mise à jour du code, relancez `pnpm run build`. Si l'installation est refusée, lancez PowerShell
-en administrateur.
+Après une mise à jour du code, relancez `pnpm run build` (application et éditeur).
 
 ## Raccourci vers l'éditeur
 
@@ -130,10 +142,15 @@ Test du script (dossiers temporaires, aucune tâche ni raccourci réel) :
 ## Développement
 
 ```powershell
-pnpm test                      # tests
+pnpm test                      # tests (application puis éditeur)
 pnpm exec tsc -p . --noEmit    # vérification des types
-pnpm run dev                   # lancement avec rechargement (tsx)
+pnpm run build                 # compile l'application (dist\) et l'éditeur (editor\dist\)
+pnpm run dev                   # application avec rechargement (tsx)
+pnpm run editor:dev            # éditeur avec rechargement (Vite)
 ```
+
+`pnpm run editor:dev` sert l'éditeur en développement sur <http://127.0.0.1:5173> (Vite) ; il
+s'adresse à l'application, qui doit tourner en parallèle (`pnpm run dev` ou `pnpm start`) sur le port 8765.
 
 ## Recette sur matériel
 
@@ -151,10 +168,16 @@ pnpm run dev                   # lancement avec rechargement (tsx)
   le mode actif est mis en évidence.
 - [ ] **4. Météo** : conditions actuelles (icône, température, ressenti, condition) et prévisions des jours
   suivants (icône, max, min).
-- [ ] **5. Caméras** : l'image remplit tout l'écran, environ 1 image/s ; le flux s'arrête quand on quitte
-  le tableau ; une caméra sans image affiche « image non disponible » sans bloquer ; une image figée depuis
-  5 s passe en gris avec la LED rouge clignotante.
-- [ ] **6. Éditeur visuel** : prochaine version (pour l'instant, configuration à la main ci-dessus).
+- [ ] **5. Caméras** : l'image remplit tout l'écran (« Plein écran ») ou s'affiche entière avec des bandes
+  noires (« Image entière »), au rythme de l'intervalle réglé (1 image/s par défaut) ; le flux s'arrête quand
+  on quitte le tableau ; une caméra sans image affiche « image non disponible » sans bloquer ; une image
+  figée depuis 5 s passe en gris avec la LED rouge clignotante.
+- [ ] **6. Éditeur visuel** : <http://127.0.0.1:8765> (ou le raccourci) s'ouvre ; la Live virtuelle montre
+  l'aperçu de la console, qui suit les changements en direct ; changer le type, le nom ou la couleur d'un
+  bouton, placer une entité par glisser-déposer, modifier un libellé, régler l'intervalle et le cadrage d'une
+  caméra : la console change aussitôt ; un dépôt invalide est refusé avec une explication ; « Annuler »
+  revient en arrière ; le jeton n'est jamais réaffiché.
 - [ ] **7. Fiabilité** : démarre à l'ouverture de session sans fenêtre (tâche « Loupedeck HA ») ; se
   reconnecte seule après avoir débranché / rebranché la console, redémarré Home Assistant ou coupé le
-  réseau ; quand HA est injoignable, les touches sont grisées avec « HA hors ligne » au lieu d'états périmés.
+  réseau ; quand HA est injoignable, les touches sont grisées avec « HA hors ligne » au lieu d'états périmés ;
+  après un plantage, l'application est relancée au bout de 5 s.
