@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createLogger } from '../src/log.js'
+import { createLogger, createSecretScrubber } from '../src/log.js'
 
 describe('createLogger', () => {
   let dir: string
@@ -25,5 +25,20 @@ describe('createLogger', () => {
     expect(lines.map((l) => l.msg)).toEqual(['Bonjour', 'Sans détails'])
     expect(lines[0].url).toBe('http://ha.local:8123')
     expect(text).not.toMatch(/SECRET/)
+  })
+})
+
+describe('createSecretScrubber', () => {
+  it('masque tous les jetons connus, y compris un ancien jeton après un changement', () => {
+    const s = createSecretScrubber()
+    s.remember('OLD-TOKEN-1234')
+    s.remember('  NEW-TOKEN-5678  ')
+    s.remember('') // jeton vide : ignoré
+    const out = s.scrub('a OLD-TOKEN-1234 b NEW-TOKEN-5678 c authorization: Bearer abc.def')
+    expect(out).not.toContain('OLD-TOKEN')
+    expect(out).not.toContain('NEW-TOKEN')
+    expect(out).not.toContain('abc.def')
+    expect(out).toContain('[jeton masqué]')
+    expect(out.startsWith('a ')).toBe(true)
   })
 })

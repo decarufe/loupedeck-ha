@@ -44,6 +44,24 @@ describe('ConfigStore', () => {
     expect(s.loadWarning).toContain('invalide')
   })
 
+  it('quarantine_warning_never_contains_the_token', async () => {
+    // Jeton non mis entre guillemets : le message de JSON.parse en recopierait un extrait.
+    await fs.writeFile(file(), '{"version":1,"ha":{"url":"http://ha.local:8123","token":eyJhbGciOiFAKETOKEN0123456789}}')
+    const lines: string[] = []
+    const spy: Logger = {
+      debug: (m, o) => { lines.push(m + JSON.stringify(o ?? {})) },
+      info: (m, o) => { lines.push(m + JSON.stringify(o ?? {})) },
+      warn: (m, o) => { lines.push(m + JSON.stringify(o ?? {})) },
+      error: (m, o) => { lines.push(m + JSON.stringify(o ?? {})) },
+    }
+    const s = await ConfigStore.open(dir, spy)
+    const q = (await fs.readdir(dir)).find(f => f.startsWith('config.invalid-'))!
+    expect(s.loadWarning).toBe(`Fichier de configuration invalide : mis de côté sous ${q} ; configuration par défaut utilisée.`)
+    const all = [s.loadWarning, ...lines].join('\n')
+    expect(lines.length).toBeGreaterThan(0)
+    for (const part of ['eyJ', 'FAKETOKEN', '0123456789', 'Unexpected']) expect(all).not.toContain(part)
+  })
+
   it('schema-invalid config is quarantined too', async () => {
     await fs.writeFile(file(), JSON.stringify({ version: 1 }))
     const s = await ConfigStore.open(dir, log)

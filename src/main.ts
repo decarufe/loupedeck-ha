@@ -1,20 +1,16 @@
 import os from 'node:os'
 import path from 'node:path'
 import { createApp, type App } from './app.js'
-import { createLogger } from './log.js'
+import { createLogger, createSecretScrubber } from './log.js'
 
 const appData = process.env.APPDATA
 const configDir = appData ? path.join(appData, 'loupedeck-ha') : path.join(os.homedir(), '.loupedeck-ha')
 const log = createLogger(path.join(configDir, 'logs', 'app.log'), { level: process.env.LOG_LEVEL ?? 'info' })
 let app: App | null = null
 
-/** Masque le jeton courant et tout en-tête « Bearer … » dans un texte destiné au journal. */
-function scrub(text: string): string {
-  let out = text.replace(/Bearer\s+[^\s"',]+/gi, 'Bearer [jeton masqué]')
-  const token = app?.store.get().ha.token.trim() ?? ''
-  if (token.length >= 4) out = out.split(token).join('[jeton masqué]')
-  return out
-}
+/** Tous les jetons vus pendant la vie du processus (initial + chaque changement) sont masqués. */
+const secrets = createSecretScrubber()
+const scrub = (text: string): string => secrets.scrub(text)
 
 function describe(err: unknown): { message: string; pile?: string } {
   if (err instanceof Error) return { message: scrub(err.message), pile: err.stack ? scrub(err.stack) : undefined }
@@ -39,6 +35,8 @@ try {
 }
 
 const cfg = app.store.get()
+secrets.remember(cfg.ha.token)
+app.store.onChange((next) => secrets.remember(next.ha.token))
 log.info('Loupedeck HA démarré', { configuration: path.join(configDir, 'config.json') })
 log.info('Home Assistant', { url: cfg.ha.url, jeton: cfg.ha.token.trim() ? 'configuré' : 'absent' })
 log.info('Éditeur : disponible dans une prochaine version')

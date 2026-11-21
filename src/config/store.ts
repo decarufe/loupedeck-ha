@@ -50,12 +50,13 @@ export class ConfigStore {
     }
     try {
       return new ConfigStore(file, validate(JSON.parse(raw)), null, log)
-    } catch (e) {
+    } catch {
       const stamp = new Date().toISOString().replaceAll(':', '-')
       const quarantine = path.join(dir, `config.invalid-${stamp}.json`)
       await fs.rename(file, quarantine)
       await chmodBestEffort(quarantine, 0o600)
-      const warning = `Le fichier de configuration était invalide (${(e as Error).message}) ; il a été mis de côté dans ${path.basename(quarantine)}.`
+      // Message fixe, sans le détail de JSON.parse ni de zod : ils peuvent recopier un extrait du jeton.
+      const warning = `Fichier de configuration invalide : mis de côté sous ${path.basename(quarantine)} ; configuration par défaut utilisée.`
       log.warn(warning)
       const store = new ConfigStore(file, defaultConfig(), warning, log)
       await store.write(store.current)

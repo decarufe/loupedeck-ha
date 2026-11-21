@@ -26,6 +26,30 @@ const consoleStream: DestinationStream = {
   },
 }
 
+export interface SecretScrubber {
+  /** Mémorise un secret (jeton) pour toute la durée du processus. */
+  remember(secret: string): void
+  /** Masque chaque secret mémorisé (entier ou par morceau entre retours à la ligne) et tout « Bearer … ». */
+  scrub(text: string): string
+}
+
+const MASK = '[jeton masqué]'
+
+export function createSecretScrubber(): SecretScrubber {
+  const secrets = new Set<string>()
+  return {
+    remember(secret) {
+      const t = secret.trim()
+      for (const s of [t, ...t.split(/[\r\n\0]+/)]) if (s.length >= 4) secrets.add(s)
+    },
+    scrub(text) {
+      let out = text.replace(/Bearer\s+[^\s"',]+/gi, `Bearer ${MASK}`)
+      for (const s of [...secrets].sort((a, b) => b.length - a.length)) out = out.split(s).join(MASK)
+      return out
+    },
+  }
+}
+
 export interface LoggerOptions {
   /** Recopie aussi les journaux dans le terminal (vrai par défaut). */
   stdout?: boolean

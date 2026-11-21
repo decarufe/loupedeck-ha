@@ -116,6 +116,11 @@ export async function createApp(d: AppDeps): Promise<App> {
     throw err
   }
 
+  // Les tableaux ne suivent que les entités : un changement de statut seul (coupure, reconnexion,
+  // remplacement du client) doit quand même redessiner l'indicateur « HA hors ligne ». `nav` désigne
+  // toujours le Navigator courant, y compris après un changement de device.path.
+  const offStatus = proxy.onStatus(() => nav?.requestRender())
+
   const offChange = store.onChange((cfg, prev) => {
     if (stopped) return
     if (!same(cfg.ha, prev.ha)) {
@@ -143,6 +148,7 @@ export async function createApp(d: AppDeps): Promise<App> {
       stopping ??= (async () => {
         stopped = true
         offChange()
+        offStatus()
         await deviceTask
         nav?.dispose()
         nav = null

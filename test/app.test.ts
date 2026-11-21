@@ -163,6 +163,30 @@ describe('createApp', () => {
     expect(devices[1]!.callsOf('refresh').length).toBeGreaterThan(0)
   })
 
+  it('ha_status_change_rerenders', async () => {
+    const a = await start()
+    const present = vi.spyOn(a.device, 'present')
+    has[0]!.setStatus({ state: 'offline', reason: 'network' })
+    await settle()
+    expect(present).toHaveBeenCalledTimes(1)
+    has[0]!.setStatus({ state: 'online', reason: null })
+    await settle()
+    expect(present).toHaveBeenCalledTimes(2)
+  })
+
+  it('ha_status_change_rerenders_after_replace_and_device_switch', async () => {
+    const a = await start()
+    await a.store.update(withChange(a, (c) => { c.ha.url = 'https://hass.example.net'; c.device.path = 'COM9' }))
+    await settle()
+    expect(devices).toHaveLength(2)
+    const present = vi.spyOn(a.device, 'present')
+    has[1]!.setStatus({ state: 'offline', reason: 'network' })
+    await settle()
+    expect(present).toHaveBeenCalledTimes(1)
+    // Le Navigator courant reçoit l'image ; la nouvelle console la dessine.
+    expect(devices[1]!.callsOf('refresh').length).toBeGreaterThan(0)
+  })
+
   it('stop_is_clean', async () => {
     const a = await start()
     await a.store.update(withChange(a, (c) => { (c.buttons[0] as LightsDashboard).keys[0] = { entityId: 'light.salon' } }))
