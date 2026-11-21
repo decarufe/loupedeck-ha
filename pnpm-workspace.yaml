@@ -1,0 +1,5 @@
+allowBuilds:
+  '@serialport/bindings-cpp': true
+  esbuild: true
+overrides:
+  canvas: link:./stubs/canvas
