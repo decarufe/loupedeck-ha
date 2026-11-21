@@ -53,6 +53,7 @@ export class Navigator {
   private dashboards: (Dashboard | null)[] = Array.from({ length: BUTTON_COUNT }, () => null)
   private active = -1
   private readonly activeCbs = new Set<(i: number) => void>()
+  private readonly renderedCbs = new Set<() => void>()
   private readonly offs: (() => void)[]
   private disposed = false
 
@@ -114,6 +115,12 @@ export class Navigator {
     return () => { this.activeCbs.delete(cb) }
   }
 
+  /** Appelé après chaque image envoyée à la console (l'aperçu de l'éditeur peut alors être rafraîchi). */
+  onRendered(cb: () => void): () => void {
+    this.renderedCbs.add(cb)
+    return () => { this.renderedCbs.delete(cb) }
+  }
+
   requestRender(): void {
     if (this.disposed) return
     if (this.rendering) {
@@ -139,6 +146,7 @@ export class Navigator {
     this.renderScheduled = false
     this.dashboards[this.active]?.deactivate()
     this.activeCbs.clear()
+    this.renderedCbs.clear()
   }
 
   private switchTo(i: number): void {
@@ -181,6 +189,7 @@ export class Navigator {
       if (this.disposed) return
       this.device.present(surface)
       this.updateBlink(view)
+      for (const cb of [...this.renderedCbs]) cb()
     } catch (err) {
       this.log?.error('Erreur de rendu', { erreur: String(err) })
     } finally {

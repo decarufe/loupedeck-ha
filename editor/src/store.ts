@@ -180,6 +180,9 @@ export async function handleLive(m: LiveMessage) {
     case 'entities':
       await loadEntities()
       break
+    case 'preview':
+      state.previewVersion++
+      break
   }
 }
 

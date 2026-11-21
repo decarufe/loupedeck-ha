@@ -180,6 +180,33 @@ describe('Navigator', () => {
     expect(device.present).toHaveBeenCalledTimes(1)
   })
 
+  it('on_rendered_fires_after_each_present', async () => {
+    const rendered = vi.fn()
+    const off = nav.onRendered(rendered)
+    nav.applyConfig(defaultConfig())
+    await settle()
+    expect(rendered).toHaveBeenCalledTimes(1)
+    nav.requestRender()
+    await settle()
+    expect(rendered).toHaveBeenCalledTimes(2)
+    off()
+    nav.requestRender()
+    await settle()
+    expect(rendered).toHaveBeenCalledTimes(2)
+  })
+
+  it('on_rendered_not_fired_when_present_fails', async () => {
+    const rendered = vi.fn()
+    nav.onRendered(rendered)
+    nav.applyConfig(defaultConfig())
+    await settle()
+    rendered.mockClear()
+    device.present.mockImplementationOnce(() => { throw new Error('boom') })
+    nav.requestRender()
+    await settle()
+    expect(rendered).not.toHaveBeenCalled()
+  })
+
   it('reconnect_rerenders', async () => {
     nav.applyConfig(defaultConfig())
     await settle()

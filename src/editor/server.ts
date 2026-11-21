@@ -14,7 +14,7 @@ import { createSurface, toPng } from '../render/surface.js'
 import { canPlace, type EntityInfo, type SlotKind } from '../shared/placement.js'
 import type { View } from '../views.js'
 
-export type LiveMessage = { type: 'config' } | { type: 'active'; button: number } | { type: 'status' } | { type: 'entities' }
+export type LiveMessage = { type: 'config' } | { type: 'active'; button: number } | { type: 'status' } | { type: 'entities' } | { type: 'preview' }
 export type PublicConfig = Omit<AppConfig, 'ha'> & {
   ha: { url: string; allowSelfSigned: boolean; hasToken: boolean }
   loadWarning: string | null

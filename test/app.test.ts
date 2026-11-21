@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import net from 'node:net'
 import path from 'node:path'
+import { setTimeout as realSleep } from 'node:timers/promises'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type App, type AppDeps } from '../src/app.js'
 import { defaultConfig, emptyDashboard, type AppConfig, type LightsDashboard } from '../src/config/schema.js'
@@ -229,6 +230,48 @@ describe('createApp', () => {
       s.on('connect', () => { s.destroy(); reject(new Error('le port est resté ouvert')) })
       s.on('error', () => resolve())
     })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it("annonce l'aperçu à l'éditeur au plus une fois par seconde après un rendu ou un changement d'entités", async () => {
+    const free = await new Promise<number>((resolve) => {
+      const s = net.createServer().listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => resolve(p)) })
+    })
+    const cfg = defaultConfig()
+    cfg.editor.port = free
+    await fs.writeFile(path.join(dir, 'config.json'), JSON.stringify(cfg))
+    const a = (app = await createApp({ ...deps(), startEditor: true, editorStaticDir: path.join(dir, 'absent') }))
+    await settle()
+    const messages: { type: string }[] = []
+    const { default: WebSocket } = await import('ws')
+    const ws = new WebSocket(`ws://127.0.0.1:${free}/api/live`)
+    ws.on('message', (m) => messages.push(JSON.parse(String(m))))
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    const previews = () => messages.filter((m) => m.type === 'preview').length
+    // Fenêtres du démarrage écoulées.
+    await vi.advanceTimersByTimeAsync(3000)
+    await realSleep(50)
+    messages.length = 0
+
+    // Rafale de changements d'entités (chacun redessine la console) : un seul envoi immédiat…
+    for (let i = 0; i < 5; i++) has[0]!.setEntity('light.salon', i % 2 ? 'on' : 'off')
+    await settle()
+    await vi.waitFor(() => expect(previews()).toBe(1))
+    await realSleep(50)
+    expect(previews()).toBe(1)
+    // … puis un seul envoi en fin de fenêtre, et plus rien sans nouvelle activité.
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.waitFor(() => expect(previews()).toBe(2))
+    await vi.advanceTimersByTimeAsync(5000)
+    await realSleep(50)
+    expect(previews()).toBe(2)
+
+    // Un rendu seul (changement de tableau actif) est aussi annoncé.
+    devices[0]!.emit('down', { id: 1 })
+    await settle()
+    await vi.waitFor(() => expect(previews()).toBe(3))
+    await a.stop()
+    app = null
     expect(vi.getTimerCount()).toBe(0)
   })
 

@@ -1,6 +1,6 @@
 import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { init, placeEntity, reset, save, state, updateSlot, loadConfig } from '../src/store'
+import { handleLive, init, loadConfig, placeEntity, reset, save, state, updateSlot } from '../src/store'
 import { entity, mockFetch, mountEditor, publicConfig } from './helpers'
 
 afterEach(() => {
@@ -120,5 +120,16 @@ describe('reconnexion du WebSocket live', () => {
     expect(count('/api/status')).toBe(2)
     expect(state.config!.buttons[0]!.name).toBe('Modifié ailleurs')
     stop()
+  })
+})
+
+describe('message live « preview »', () => {
+  it('preview_bumps_preview_version_without_fetching', async () => {
+    const m = mockFetch(publicConfig())
+    reset()
+    const before = state.previewVersion
+    await handleLive({ type: 'preview' })
+    expect(state.previewVersion).toBe(before + 1)
+    expect(m.calls).toHaveLength(0)
   })
 })

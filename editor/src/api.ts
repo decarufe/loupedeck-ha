@@ -6,7 +6,8 @@ export type PublicConfig = Omit<AppConfig, 'ha'> & {
   ha: { url: string; allowSelfSigned: boolean; hasToken: boolean }
   loadWarning: string | null
 }
-export type LiveMessage = { type: 'config' } | { type: 'active'; button: number } | { type: 'status' } | { type: 'entities' }
+/** `preview` : la console a été redessinée, l'aperçu doit être rechargé (au plus une fois par seconde). */
+export type LiveMessage = { type: 'config' } | { type: 'active'; button: number } | { type: 'status' } | { type: 'entities' } | { type: 'preview' }
 export interface Status {
   device: { status: string; firmware: string | null }
   ha: { state: string; [k: string]: unknown }

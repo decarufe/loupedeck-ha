@@ -11,6 +11,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Logger } from './log.js'
 import { Navigator } from './navigator.js'
+import { createThrottle } from './shared/throttle.js'
+
+/** Cadence maximale des messages live « preview » envoyés à l'éditeur. */
+const PREVIEW_NOTIFY_MS = 1000
 
 export interface AppDeps {
   configDir: string
@@ -84,6 +88,8 @@ export async function createApp(d: AppDeps): Promise<App> {
   let nav = null as Navigator | null
   let editor: EditorServer | null = null
   const actions = new Actions({ ha: proxy, feedback: (k) => link.vibrate(k) })
+  // L'aperçu de l'éditeur suit la console : au plus un message par seconde, le dernier changement n'est jamais perdu.
+  const notifyPreview = createThrottle<void>(() => editor?.notify({ type: 'preview' }), PREVIEW_NOTIFY_MS)
 
   /** Crée la liaison avec la console et le Navigator qui la pilote, à partir de la configuration courante. */
   const wire = (path: string | null): void => {
@@ -95,6 +101,7 @@ export async function createApp(d: AppDeps): Promise<App> {
     // Abonnements posés avant applyConfig : le choix du tableau actif initial est aussi annoncé à l'éditeur.
     nav.onActiveChange((button) => editor?.notify({ type: 'active', button }))
     link.onStatus(() => editor?.notify({ type: 'status' }))
+    nav.onRendered(() => notifyPreview())
     nav.applyConfig(cfg)
   }
 
@@ -120,6 +127,7 @@ export async function createApp(d: AppDeps): Promise<App> {
     wire(store.get().device.path)
   } catch (err) {
     nav?.dispose()
+    notifyPreview.cancel()
     actions.dispose()
     await link?.stop()
     proxy.close()
@@ -134,6 +142,7 @@ export async function createApp(d: AppDeps): Promise<App> {
     editor?.notify({ type: 'status' })
     if (st.state === 'online') editor?.notify({ type: 'entities' })
   })
+  const offEntities = proxy.onEntities(() => notifyPreview())
 
   const offChange = store.onChange((cfg, prev) => {
     if (stopped) return
@@ -178,11 +187,14 @@ export async function createApp(d: AppDeps): Promise<App> {
         stopped = true
         offChange()
         offStatus()
+        offEntities()
+        notifyPreview.cancel()
         await editor?.close()
         editor = null
         await deviceTask
         nav?.dispose()
         nav = null
+        notifyPreview.cancel()
         actions.dispose()
         await link.stop()
         proxy.close()
