@@ -36,4 +36,31 @@ describe('schéma de configuration', () => {
       expect(cam.type === 'camera' && cam.fit).toBe('cover')
     })
   })
+
+  describe('adresse Home Assistant', () => {
+    const withUrl = (url: string) => {
+      const c = defaultConfig()
+      c.ha.url = url
+      return c
+    }
+
+    it('ha_url_accepts_http_and_https', () => {
+      for (const url of ['http://homeassistant.local:8123', 'https://hass.example.net', 'HTTPS://hass.example.net/', ' http://10.0.0.2:8123 ']) {
+        expect(parse(withUrl(url)).success, url).toBe(true)
+      }
+    })
+
+    it('ha_url_rejects_other_schemes_with_french_message', () => {
+      for (const url of ['ftp://hass.example', 'homeassistant.local:8123', 'ws://hass.example', 'http:/x']) {
+        const r = parse(withUrl(url))
+        expect(r.success, url).toBe(false)
+        const issue = r.error!.issues.find((i) => i.path.join('.') === 'ha.url')
+        expect(issue?.message).toBe("L'adresse Home Assistant doit commencer par http:// ou https://")
+      }
+    })
+
+    it('ha_url_empty_still_allowed_for_blank_config', () => {
+      expect(parse(withUrl('')).success).toBe(true)
+    })
+  })
 })

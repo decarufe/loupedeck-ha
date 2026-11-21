@@ -352,6 +352,16 @@ describe('serveur de l’éditeur', () => {
     expect(store.get().ha.token).toBe('AUTRE')
   })
 
+  it('put_rejects_url_without_http_scheme', async () => {
+    await start()
+    const cfg = body(store.get())
+    cfg.ha.url = 'homeassistant.local:8123'
+    const res = await put({ ...cfg, newToken: 'AUTRE' })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().issues).toContain("ha.url : L'adresse Home Assistant doit commencer par http:// ou https://")
+    expect(store.get().ha.token).toBe('SECRET123')
+  })
+
   it('put_does_not_hang_when_entity_list_never_resolves', async () => {
     await ed()?.close()
     editor = await startEditorServer({

@@ -60,11 +60,16 @@ const camera = z.object({
   fit: z.enum(CAMERA_FITS).default('cover'),
 })
 
+/** Adresse Home Assistant : `http://` ou `https://` (espaces autour tolérés) ; vide admis pour une configuration vierge. */
+const haUrl = z.string().refine((u) => u.trim() === '' || /^https?:\/\//i.test(u.trim()), {
+  message: "L'adresse Home Assistant doit commencer par http:// ou https://",
+})
+
 const dashboard = z.discriminatedUnion('type', [lights, climate, weather, camera])
 
 export const appConfigSchema: z.ZodType<AppConfig> = z.object({
   version: z.literal(1),
-  ha: z.object({ url: z.string(), token: z.string(), allowSelfSigned: z.boolean() }),
+  ha: z.object({ url: haUrl, token: z.string(), allowSelfSigned: z.boolean() }),
   device: z.object({ path: z.string().nullable(), brightness: z.number().min(0).max(1) }),
   editor: z.object({ port: z.number().int().min(1).max(65535) }),
   buttons: z.array(dashboard.nullable()).length(8),
