@@ -155,6 +155,33 @@ describe('Actions', () => {
     expect(ha.calls[1]).toMatchObject({ data: { temperature: 20.5 } })
   })
 
+  it('knob_settings_send_no_ok_vibration', () => {
+    actions.setBrightness('light.a', 10)
+    vi.advanceTimersByTime(50); actions.setBrightness('light.a', 20)
+    vi.advanceTimersByTime(200)
+    actions.setTemperature('climate.t', 19.5)
+    actions.setTemperature('climate.t', 20)
+    vi.advanceTimersByTime(200)
+    expect(ha.calls).toHaveLength(4)
+    expect(feedback).not.toHaveBeenCalled()
+  })
+
+  it('toggle_and_mode_still_vibrate_ok', () => {
+    actions.toggle('light.a')
+    expect(feedback).toHaveBeenLastCalledWith('ok')
+    feedback.mockClear()
+    actions.setHvacMode('climate.t', 'heat')
+    expect(feedback).toHaveBeenCalledWith('ok')
+  })
+
+  it('knob_setting_rejected_still_vibrates_error', async () => {
+    ha.callService = () => Promise.reject(new Error('boom'))
+    actions.setBrightness('light.a', 40)
+    actions.setTemperature('climate.t', 21)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(feedback.mock.calls).toEqual([['error'], ['error']])
+  })
+
   it('hvac_mode', () => {
     actions.setHvacMode('climate.t', 'cool')
     actions.setHvacMode('climate.t', 'heat')

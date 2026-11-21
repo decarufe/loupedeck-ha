@@ -61,11 +61,13 @@ export class Actions {
       }, this.confirmTimeoutMs),
     }
     this.pendings.set(entityId, entry)
-    this.send(entityId.split('.')[0], 'toggle', undefined, entityId, () => {
-      if (this.pendings.get(entityId) !== entry) return
-      clearTimeout(entry.timer)
-      this.pendings.delete(entityId)
-      this.emit()
+    this.send(entityId.split('.')[0], 'toggle', undefined, entityId, {
+      onReject: () => {
+        if (this.pendings.get(entityId) !== entry) return
+        clearTimeout(entry.timer)
+        this.pendings.delete(entityId)
+        this.emit()
+      },
     })
     this.emit()
   }
@@ -75,8 +77,8 @@ export class Actions {
     const v = Math.round(Math.min(100, Math.max(0, pct)))
     this.hold(entityId, 'brightness', v)
     this.throttle(entityId, 'brightness', (value) => {
-      if (value === 0) this.send('light', 'turn_off', undefined, entityId)
-      else this.send('light', 'turn_on', { brightness_pct: value }, entityId)
+      if (value === 0) this.send('light', 'turn_off', undefined, entityId, { silent: true })
+      else this.send('light', 'turn_on', { brightness_pct: value }, entityId, { silent: true })
     })(v)
   }
 
@@ -84,7 +86,7 @@ export class Actions {
     if (!this.guard()) return
     this.hold(entityId, 'temperature', value)
     this.throttle(entityId, 'temperature', (t) => {
-      this.send('climate', 'set_temperature', { temperature: t }, entityId)
+      this.send('climate', 'set_temperature', { temperature: t }, entityId, { silent: true })
     })(value)
   }
 
@@ -125,11 +127,17 @@ export class Actions {
     return false
   }
 
-  /** Envoie l'appel de service ; `ok` à l'envoi, `error` au rejet. */
-  private send(domain: string, service: string, data: object | undefined, entityId: string, onReject?: () => void): void {
-    this.feedback('ok')
+  /**
+   * Envoie l'appel de service ; `ok` à l'envoi (sauf `silent`), `error` au rejet.
+   * `silent` : envois limités en débit des molettes (gradation, consigne), qui vibreraient à chaque cran.
+   */
+  private send(
+    domain: string, service: string, data: object | undefined, entityId: string,
+    o: { onReject?: () => void; silent?: boolean } = {},
+  ): void {
+    if (!o.silent) this.feedback('ok')
     this.ha.callService(domain, service, data, { entity_id: entityId }).catch(() => {
-      onReject?.()
+      o.onReject?.()
       this.feedback('error')
     })
   }
