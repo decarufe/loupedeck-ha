@@ -21,7 +21,7 @@ export interface HaPort {
   callService(domain: string, service: string, data?: object, target?: { entity_id: string }): Promise<void>
   getForecasts(entityId: string, type: ForecastType): Promise<Forecast[]>
   listEntityInfo(): Promise<EntityInfo[]>
-  fetchCameraImage(entityId: string, size: { width: number; height: number }): Promise<Buffer>
+  fetchCameraImage(entityId: string, size: { width: number; height: number }, signal?: AbortSignal): Promise<Buffer>
   close(): void
 }
 

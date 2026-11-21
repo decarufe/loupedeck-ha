@@ -75,7 +75,8 @@ export class FakeHa implements HaPort {
     })))
   }
 
-  fetchCameraImage(_entityId: string, _size: { width: number; height: number }): Promise<Buffer> {
+  fetchCameraImage(_entityId: string, _size: { width: number; height: number }, signal?: AbortSignal): Promise<Buffer> {
+    if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
     if (this.cameraImage instanceof Error) return Promise.reject(this.cameraImage)
     return Promise.resolve(this.cameraImage)
   }

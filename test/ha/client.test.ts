@@ -222,6 +222,22 @@ describe('HaClient', () => {
     expect(String((err as Error).message)).not.toContain(GOOD)
   })
 
+  it('camera_fetch_abort_cancels_in_flight', async () => {
+    const server = await startServer()
+    server.cameraDelayMs = 3000
+    const c = makeClient(server)
+    const ac = new AbortController()
+    const started = Date.now()
+    const p = c.fetchCameraImage('camera.porte', { width: 480, height: 270 }, ac.signal).catch((e: unknown) => e)
+    await sleep(50)
+    ac.abort()
+    const err = await p
+    expect(Date.now() - started).toBeLessThan(1500)
+    expect(err).toBeInstanceOf(CameraImageError)
+    expect((err as Error).message).toBe('Requête caméra annulée')
+    expect(String((err as Error).message)).not.toContain(GOOD)
+  })
+
   it('close_stops_retries_and_listeners', async () => {
     const server = await startServer()
     server.refuse = true

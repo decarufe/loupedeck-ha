@@ -132,6 +132,32 @@ describe('tableau Caméra', () => {
     d.deactivate()
   })
 
+  it('stale_view_matches_tick_render', async () => {
+    let hang = false
+    const d = make(probe({ hang: () => hang }))
+    let staleAtRender: boolean[] = []
+    render.mockImplementation(() => { staleAtRender.push(fv(d).stale) })
+    d.activate()
+    await vi.advanceTimersByTimeAsync(10)
+    hang = true
+    await vi.advanceTimersByTimeAsync(1000)
+    staleAtRender = []
+    await vi.advanceTimersByTimeAsync(4000 - 10) // t = 5000 : age exactement 5000
+    expect(staleAtRender).toEqual([true])
+    d.deactivate()
+  })
+
+  it('deactivate_aborts_source_signal', async () => {
+    let seen: AbortSignal | undefined
+    const src: CameraSource = { next: (s) => { seen = s; return new Promise<never>(() => {}) } }
+    const d = make(src)
+    d.activate()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(seen?.aborted).toBe(false)
+    d.deactivate()
+    expect(seen?.aborted).toBe(true)
+  })
+
   it('stale_clears_on_success', async () => {
     let hang = false
     const src = probe({ hang: () => hang })
@@ -182,8 +208,9 @@ describe('tableau Caméra', () => {
 
   it('ha_proxy_source', async () => {
     const spy = vi.spyOn(ha, 'fetchCameraImage')
-    const out = await createHaProxySource(ha, 'camera.porte').next(new AbortController().signal)
-    expect(spy).toHaveBeenCalledWith('camera.porte', { width: 480, height: 270 })
+    const signal = new AbortController().signal
+    const out = await createHaProxySource(ha, 'camera.porte').next(signal)
+    expect(spy).toHaveBeenCalledWith('camera.porte', { width: 480, height: 270 }, signal)
     expect(Buffer.isBuffer(out)).toBe(true)
   })
 })

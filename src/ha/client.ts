@@ -309,13 +309,13 @@ export class HaClient implements HaPort {
     })
   }
 
-  async fetchCameraImage(entityId: string, size: { width: number; height: number }): Promise<Buffer> {
+  async fetchCameraImage(entityId: string, size: { width: number; height: number }, signal?: AbortSignal): Promise<Buffer> {
     if (this.tokenInvalid) throw new CameraImageError('Configuration invalide (jeton)')
     const url = `${this.base}/api/camera_proxy/${encodeURIComponent(entityId)}?width=${size.width}&height=${size.height}`
     try {
       const res = await fetch(url, {
         headers: { authorization: `Bearer ${this.token}` },
-        signal: AbortSignal.timeout(CAMERA_TIMEOUT_MS),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CAMERA_TIMEOUT_MS)]) : AbortSignal.timeout(CAMERA_TIMEOUT_MS),
         dispatcher: this.dispatcher,
       })
       if (!res.ok) {
@@ -331,6 +331,7 @@ export class HaClient implements HaPort {
     } catch (err) {
       if (err instanceof CameraImageError) throw err
       // Jamais le message brut de fetch/undici : il peut recopier la valeur de l'en-tête Authorization.
+      if (signal?.aborted) throw new CameraImageError('Requête caméra annulée')
       throw new CameraImageError(isTimeout(err) ? "Délai dépassé pour l'image de la caméra" : 'Caméra injoignable')
     }
   }

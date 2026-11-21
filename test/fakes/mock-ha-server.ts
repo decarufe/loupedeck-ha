@@ -20,6 +20,7 @@ export class MockHaServer {
   /** Messages reçus des clients après l'authentification. */
   received: Msg[] = []
   httpRequests: HttpRequestRecord[] = []
+  cameraDelayMs = 0
   camera: { status: number; contentType: string; body: Buffer } = {
     status: 200,
     contentType: 'image/jpeg',
@@ -61,8 +62,12 @@ export class MockHaServer {
     this.http = createServer((req, res) => {
       this.httpRequests.push({ method: req.method ?? '', url: req.url ?? '', headers: req.headers })
       if (req.url?.startsWith('/api/camera_proxy/')) {
-        res.writeHead(this.camera.status, { 'content-type': this.camera.contentType })
-        res.end(this.camera.body)
+        const { status, contentType, body } = this.camera
+        setTimeout(() => {
+          if (res.destroyed) return
+          res.writeHead(status, { 'content-type': contentType })
+          res.end(body)
+        }, this.cameraDelayMs)
         return
       }
       res.writeHead(404, { 'content-type': 'text/plain' })

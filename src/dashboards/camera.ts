@@ -21,7 +21,7 @@ export function createCameraDashboard(
   let staleTimer: ReturnType<typeof setInterval> | null = null
   let reportedStale = false
 
-  const isStale = (threshold: (age: number) => boolean) => image !== null && threshold(Date.now() - lastFrameAt)
+  const isStale = () => image !== null && Date.now() - lastFrameAt >= STALE_MS
 
   function sleep(ms: number): Promise<void> {
     if (ms <= 0) return Promise.resolve()
@@ -56,7 +56,7 @@ export function createCameraDashboard(
         kind: 'full',
         image,
         message: image ? null : 'Image non disponible',
-        stale: isStale((age) => age > STALE_MS),
+        stale: isStale(),
         offline,
       }
     },
@@ -69,9 +69,9 @@ export function createCameraDashboard(
       source ??= makeSource(cfg)
       const mine = ++epoch
       abort = new AbortController()
-      reportedStale = isStale((age) => age >= STALE_MS)
+      reportedStale = isStale()
       staleTimer = setInterval(() => {
-        const stale = isStale((age) => age >= STALE_MS)
+        const stale = isStale()
         if (stale !== reportedStale) { reportedStale = stale; d.requestRender() }
       }, STALE_CHECK_MS)
       void loop(mine, abort.signal)
