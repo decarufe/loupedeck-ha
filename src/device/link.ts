@@ -311,7 +311,11 @@ export class DeviceLink {
             for (const [id, rect] of changed) await this.write(dev, rect, bufs.get(id)!)
           }
           await this.timed(dev.refresh('left'), this.drawTimeoutMs)
-          if (this.device === dev) this.lastSent = bufs
+          if (this.device === dev) {
+            // Repère pour le diagnostic : une fois par connexion.
+            if (this.lastSent.size === 0) this.log.info('Première image affichée sur la console')
+            this.lastSent = bufs
+          }
         } catch (err) {
           if (this.stopped) return
           const detail = { erreur: errorText(err) }

@@ -1,0 +1,156 @@
+import type { AppConfig } from './config/schema.js'
+import { StateStore } from './config/state.js'
+import { ConfigStore } from './config/store.js'
+import { createLoupedeckFactory, DeviceLink, type LoupedeckLike } from './device/link.js'
+import { Actions } from './ha/actions.js'
+import { HaClient } from './ha/client.js'
+import { HaProxy } from './ha/proxy.js'
+import { CameraImageError, OFFLINE_MESSAGE, type HaPort, type HaStatus } from './ha/types.js'
+import type { Logger } from './log.js'
+import { Navigator } from './navigator.js'
+
+export interface AppDeps {
+  configDir: string
+  log: Logger
+  createDevice?: (path: string | null) => () => Promise<LoupedeckLike>
+  createHa?: (ha: AppConfig['ha'], log: Logger) => HaPort
+  /** Accepté dès maintenant ; le serveur de l'éditeur sera branché ici par la Task 14. Ignoré pour l'instant. */
+  startEditor?: boolean
+}
+
+export interface App {
+  stop(): Promise<void>
+  navigator: Navigator
+  device: DeviceLink
+  store: ConfigStore
+  ha(): HaPort
+}
+
+/** HaPort sans connexion : jeton absent ou URL invalide. Aucune tentative d'authentification n'est faite. */
+function disconnectedHa(status: HaStatus): HaPort {
+  const offline = () => Promise.reject(new Error(OFFLINE_MESSAGE))
+  return {
+    status: () => status,
+    entities: () => ({}),
+    onEntities: () => () => {},
+    onStatus: () => () => {},
+    callService: offline,
+    getForecasts: offline,
+    listEntityInfo: offline,
+    fetchCameraImage: () => Promise.reject(new CameraImageError(OFFLINE_MESSAGE)),
+    close: () => {},
+  }
+}
+
+/** Client réel : démarre la connexion en arrière-plan (les échecs réseau sont retentés par HaClient). */
+export function defaultCreateHa(ha: AppConfig['ha'], log: Logger): HaPort {
+  if (ha.token.trim() === '') {
+    log.warn('Aucun jeton Home Assistant configuré : connexion désactivée')
+    return disconnectedHa({ state: 'offline', reason: 'auth' })
+  }
+  try {
+    const client = new HaClient({ url: ha.url, token: ha.token, allowSelfSigned: ha.allowSelfSigned, log })
+    client.start()
+    return client
+  } catch (err) {
+    log.error('URL Home Assistant invalide : connexion désactivée', { erreur: (err as Error).message })
+    return disconnectedHa({ state: 'offline', reason: 'network' })
+  }
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * Assemble l'application. Rejette seulement si la configuration ou l'état ne peuvent pas être ouverts
+ * (rien n'est alors démarré) ; une console ou un Home Assistant injoignables sont retentés en arrière-plan.
+ */
+export async function createApp(d: AppDeps): Promise<App> {
+  const { log } = d
+  const createDevice = d.createDevice ?? createLoupedeckFactory
+  const createHa = d.createHa ?? defaultCreateHa
+  // d.startEditor : branché par la Task 14 (serveur de l'éditeur).
+
+  const store = await ConfigStore.open(d.configDir, log)
+  const state = await StateStore.open(d.configDir)
+
+  const proxy = new HaProxy(createHa(store.get().ha, log), log)
+  let link!: DeviceLink
+  let nav = null as Navigator | null
+  const actions = new Actions({ ha: proxy, feedback: (k) => link.vibrate(k) })
+
+  /** Crée la liaison avec la console et le Navigator qui la pilote, à partir de la configuration courante. */
+  const wire = (path: string | null): void => {
+    const cfg = store.get()
+    link = new DeviceLink({ createDevice: createDevice(path), log })
+    link.setBrightness(cfg.device.brightness)
+    link.start()
+    nav = new Navigator({ device: link, ha: proxy, actions, state, log })
+    nav.applyConfig(cfg)
+  }
+
+  let stopped = false
+  let switching = 0
+  let deviceTask: Promise<void> = Promise.resolve()
+
+  /** Changement de chemin : on libère l'ancien port avant d'ouvrir le nouveau. */
+  const restartDevice = (path: string | null): void => {
+    switching++
+    deviceTask = deviceTask
+      .then(async () => {
+        nav?.dispose()
+        nav = null
+        await link.stop()
+        if (!stopped) wire(path)
+      })
+      .catch((err: unknown) => log.error('Redémarrage de la liaison avec la console impossible', { erreur: String(err) }))
+      .finally(() => { switching-- })
+  }
+
+  try {
+    wire(store.get().device.path)
+  } catch (err) {
+    nav?.dispose()
+    actions.dispose()
+    await link?.stop()
+    proxy.close()
+    throw err
+  }
+
+  const offChange = store.onChange((cfg, prev) => {
+    if (stopped) return
+    if (!same(cfg.ha, prev.ha)) {
+      log.info('Paramètres Home Assistant modifiés : nouvelle connexion', { url: cfg.ha.url })
+      proxy.replace(createHa(cfg.ha, log))
+    }
+    if (cfg.device.path !== prev.device.path) {
+      log.info('Chemin de la console modifié : reconnexion', { chemin: cfg.device.path ?? 'automatique' })
+      restartDevice(cfg.device.path)
+      return
+    }
+    // Pendant un redémarrage de la liaison, wire() appliquera la configuration la plus récente.
+    if (switching > 0) return
+    if (cfg.device.brightness !== prev.device.brightness) link.setBrightness(cfg.device.brightness)
+    if (!same(cfg.buttons, prev.buttons)) nav?.applyConfig(cfg)
+  })
+
+  let stopping: Promise<void> | null = null
+  return {
+    get navigator() { return nav! },
+    get device() { return link },
+    store,
+    ha: () => proxy,
+    stop() {
+      stopping ??= (async () => {
+        stopped = true
+        offChange()
+        await deviceTask
+        nav?.dispose()
+        nav = null
+        actions.dispose()
+        await link.stop()
+        proxy.close()
+      })()
+      return stopping
+    },
+  }
+}

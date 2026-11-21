@@ -1,12 +1,15 @@
 # Essai de débit de la Loupedeck Live (2026-11-20)
 
-Script : `npm run spike` (`scripts/spike-throughput.ts`). Machine : Windows 11, Node 26.3.0.
+Script : `pnpm run spike` (`scripts/spike-throughput.ts`). Machine : Windows 11, Node 26.3.0.
 
 ## Console
 - Port : COM4, VID 0x2ec2, PID 0x0004
 - Numéro de série : LDD2001014021330700766B0008
 - Firmware : 0.2.5 (pas le 0.2.26 : le problème de dessin du point 8 de la spec §12 ne s'applique pas ici)
 - Erreurs : aucune. Connexion immédiate, `close()` propre.
+- **Luminosité au démarrage : 0.** L'écran reste noir tant que `setBrightness` n'a pas été envoyé (constaté
+  ensuite par le diagnostic de l'utilisateur). Les mesures ci-dessous restent valables : elles portent sur le
+  transfert USB, pas sur l'affichage. L'application envoie la luminosité à chaque connexion.
 
 ## Mesures (10 s chacune, `drawBuffer` avec `autoRefresh: false` puis `refresh('left')`, couleurs alternées)
 | Mesure | Images | Images/s |

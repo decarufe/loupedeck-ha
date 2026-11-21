@@ -245,6 +245,26 @@ describe('DeviceLink', () => {
     await link.stop()
   })
 
+  it('default_brightness_applied_on_connect', async () => {
+    // La Live démarre avec la luminosité à 0 : sans setBrightness, l'écran reste noir.
+    const d = new FakeDevice()
+    const { link } = await connected([d])
+    expect(d.callsOf('setBrightness').map((c) => c.args[0])).toEqual([1])
+    await link.stop()
+  })
+
+  it('journalise la première image une seule fois par connexion', async () => {
+    const { link, log } = await connected([new FakeDevice()])
+    const firstFrameLogs = () => log.info.mock.calls.filter(([m]) => String(m).includes('Première image')).length
+    expect(firstFrameLogs()).toBe(0)
+    link.present(solid('#FF0000'))
+    await flush()
+    link.present(solid('#0000FF'))
+    await flush()
+    expect(firstFrameLogs()).toBe(1)
+    await link.stop()
+  })
+
   it('vibrate_patterns', async () => {
     const d = new FakeDevice()
     const { link } = await connected([d])
