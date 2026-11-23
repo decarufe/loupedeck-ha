@@ -11,13 +11,14 @@ import { app, BrowserWindow, dialog, Menu, Notification, shell, Tray, utilityPro
 import updaterPkg from 'electron-updater'
 import { createLogger } from '../log.js'
 import { configDir as resolveConfigDir } from '../shared/paths.js'
-import { aboutChoice, aboutDialogOptions, REPO_URL } from './about.js'
+import { aboutChoice, aboutDialogOptions, REPO_URL, type AboutUpdates } from './about.js'
 import { initAutostart } from './autostart.js'
 import { editorUrlFromPort, readEditorPort } from './editor-url.js'
 import { removeLegacyInstall } from './legacy.js'
 import { buildMenuTemplate, type MenuState } from './menu.js'
 import { createQuitController } from './quit.js'
 import { createSupervisor, type ChildLike } from './supervisor.js'
+import { createUpdateFlow } from './update-flow.js'
 import { startUpdateChecks } from './updater.js'
 
 const APP_ID = 'com.decarufe.loupedeck-ha'
@@ -51,7 +52,9 @@ async function main(): Promise<void> {
   const state: MenuState = {
     autostart: app.getLoginItemSettings().openAtLogin,
     autostartAvailable: app.isPackaged,
+    updatesAvailable: app.isPackaged,
     updateVersion: null,
+    update: { kind: 'idle' },
   }
 
   async function openEditor(): Promise<void> {
@@ -60,9 +63,12 @@ async function main(): Promise<void> {
   }
 
   async function about(): Promise<void> {
-    const { response } = await dialog.showMessageBox(aboutDialogOptions(app.getVersion()))
-    const choice = aboutChoice(response)
-    if (choice === 'logs') await shell.openPath(logsDir)
+    const updates: AboutUpdates = { available: state.updatesAvailable && state.update.kind === 'idle', ready: state.updateVersion }
+    const { response } = await dialog.showMessageBox(aboutDialogOptions(app.getVersion(), updates))
+    const choice = aboutChoice(response, updates)
+    if (choice === 'check-updates') await updateFlow.run()
+    else if (choice === 'install-update') await quitter.installUpdate()
+    else if (choice === 'logs') await shell.openPath(logsDir)
     else if (choice === 'github') await shell.openExternal(REPO_URL)
   }
 
@@ -72,6 +78,22 @@ async function main(): Promise<void> {
     quitAndInstall: () => {
       log.info('Lancement de l’installateur', { version: state.updateVersion })
       autoUpdater.quitAndInstall(true, true)
+    },
+    log,
+  })
+
+  const notify = (body: string) => new Notification({ title: 'Loupedeck HA', body }).show()
+  const updateFlow = createUpdateFlow({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    showDialog: async (o) => (await dialog.showMessageBox(o)).response,
+    install: () => quitter.installUpdate(),
+    notify,
+    openUrl: (url) => { void shell.openExternal(url) },
+    quitting: () => quitter.inProgress(),
+    onState: (s) => {
+      state.update = s
+      refreshMenu()
     },
     log,
   })
@@ -90,6 +112,7 @@ async function main(): Promise<void> {
       about: () => { void about() },
       quit: () => { void quitter.quit() },
       installUpdate: () => { void quitter.installUpdate() },
+      checkUpdates: () => { void updateFlow.run() },
     })))
   }
   tray.on('click', () => { void openEditor() })
@@ -148,7 +171,8 @@ async function main(): Promise<void> {
       onDownloaded: (version) => {
         state.updateVersion = version
         refreshMenu()
-        new Notification({ title: 'Loupedeck HA', body: `Version ${version} prête — redémarrer pour installer` }).show()
+        // « Installer maintenant » : l'application redémarre aussitôt, rien à annoncer.
+        if (!updateFlow.installing()) notify(`Version ${version} prête — redémarrer pour installer`)
       },
     })
   }

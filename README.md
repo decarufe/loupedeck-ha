@@ -44,7 +44,8 @@ Clic gauche : ouvre l'éditeur. Clic droit :
 | **Redémarrer pour installer la version x.y.z** | Présente seulement quand une mise à jour est prête (voir plus bas). |
 | **Ouvrir la configuration** | Ouvre l'éditeur dans votre navigateur (`http://127.0.0.1:8765/` par défaut). |
 | **Démarrer avec Windows** | Case à cocher : lance l'application à l'ouverture de votre session. Cochée au premier lancement. |
-| **À propos…** | Version installée, lien vers ce dépôt, bouton pour ouvrir le dossier des journaux. |
+| **Vérifier les mises à jour…** | Cherche tout de suite une nouvelle version et propose de l'installer sans attendre. |
+| **À propos…** | Version installée, vérification des mises à jour, lien vers ce dépôt, bouton pour ouvrir le dossier des journaux. |
 | **Quitter** | Arrête proprement l'application (la console s'éteint) et retire l'icône. |
 
 Relancer « Loupedeck HA » depuis le menu Démarrer alors qu'elle tourne déjà ouvre simplement l'éditeur.
@@ -115,6 +116,10 @@ apparaît en tête du menu. Rien ne s'installe pendant que vous utilisez la cons
 s'installe quand vous choisissez cette entrée, ou sinon à la prochaine fermeture de l'application.
 Sans connexion Internet, la vérification échoue en silence et réessaie au cycle suivant.
 
+Pour ne pas attendre : **Vérifier les mises à jour…** (menu de l'icône ou **À propos…**), puis **Installer
+maintenant** : l'application termine le téléchargement et redémarre dans la nouvelle version. **Plus tard** la
+laisse s'installer comme ci-dessus.
+
 La configuration et le jeton sont conservés par les mises à jour comme par la désinstallation.
 
 ### Journaux
@@ -176,8 +181,8 @@ pnpm run app                   # la version Electron (icône de notification) de
 **Quittez d'abord la version installée** (menu de l'icône → **Quitter**) : les deux versions partagent la
 console, le port de l'éditeur et `%APPDATA%\loupedeck-ha`, et rien n'empêche de les lancer en même temps.
 
-En développement, la case « Démarrer avec Windows » est grisée et les mises à jour automatiques sont
-désactivées. Pour plus de détails dans le journal : `$env:LOG_LEVEL='debug'; pnpm start`.
+En développement, « Démarrer avec Windows » et « Vérifier les mises à jour… » sont grisées et les mises à jour
+automatiques sont désactivées. Pour plus de détails dans le journal : `$env:LOG_LEVEL='debug'; pnpm start`.
 
 ### Développement
 

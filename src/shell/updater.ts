@@ -3,11 +3,18 @@ import type { Logger } from '../log.js'
 export const UPDATE_INITIAL_DELAY_MS = 10_000
 export const UPDATE_INTERVAL_MS = 4 * 60 * 60 * 1000
 
+/** Sous-ensemble du résultat d'une vérification d'electron-updater. */
+export interface UpdateCheck {
+  isUpdateAvailable: boolean
+  updateInfo: { version: string }
+  downloadPromise?: Promise<unknown> | null
+}
+
 /** Sous-ensemble de l'`autoUpdater` d'electron-updater. */
 export interface UpdaterLike {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
-  checkForUpdates(): Promise<unknown>
+  checkForUpdates(): Promise<UpdateCheck | null>
   on(event: 'update-downloaded', l: (info: { version: string }) => void): unknown
   on(event: 'error', l: (err: Error) => void): unknown
 }
@@ -32,7 +39,10 @@ export function startUpdateChecks(o: { updater: UpdaterLike; log: Logger; onDown
   })
 
   const check = () => {
-    updater.checkForUpdates().catch((err: unknown) => {
+    updater.checkForUpdates().then((r) => {
+      // Un téléchargement interrompu est déjà journalisé par l'événement « error ».
+      r?.downloadPromise?.catch(() => {})
+    }).catch((err: unknown) => {
       log.warn('Mise à jour : vérification impossible', { erreur: err instanceof Error ? err.message : String(err) })
     })
   }
