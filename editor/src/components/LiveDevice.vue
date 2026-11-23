@@ -185,7 +185,9 @@ function endDrag() {
 }
 function over(e: DragEvent, id: string) {
   state.dragSwap = e.shiftKey
-  if (e.dataTransfer) e.dataTransfer.dropEffect = e.ctrlKey || e.metaKey || e.altKey ? 'copy' : 'move'
+  // La palette n'autorise que la copie (`effectAllowed`) : répondre « move » ferait refuser le dépôt par le navigateur.
+  const moving = state.drag !== null && state.drag.type !== 'entity' && state.drag.type !== 'kind'
+  if (e.dataTransfer) e.dataTransfer.dropEffect = moving && !(e.ctrlKey || e.metaKey || e.altKey) ? 'move' : 'copy'
   const now = performance.now()
   if (state.dragOver === id) { pendingOver = null; return }
   if (now < lockUntil) {
