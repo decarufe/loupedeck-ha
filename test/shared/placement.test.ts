@@ -45,6 +45,11 @@ describe('canPlace', () => {
     expect(canPlace('camera', ent({ domain: 'camera' })).ok).toBe(true)
     expect(canPlace('camera', ent({ domain: 'light' })).ok).toBe(false)
   })
+  it('alert_accepts_only_binary_sensors', () => {
+    expect(canPlace('alert', ent({ domain: 'binary_sensor' }))).toEqual({ ok: true })
+    expect(canPlace('alert', ent({ domain: 'light' }))).toEqual({ ok: false, reason: 'Une alerte accepte seulement un capteur tout ou rien (binary_sensor).' })
+  })
+
   it('types de touche Bouton custom', () => {
     expect(canPlace('toggle', ent({ domain: 'input_boolean' })).ok).toBe(true)
     expect(canPlace('toggle', ent({ domain: 'sensor' })).ok).toBe(false)

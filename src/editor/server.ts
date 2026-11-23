@@ -157,6 +157,7 @@ function placementIssues(cfg: AppConfig, known: Map<string, EntityInfo>): string
         break
       case 'camera':
         check(`${t}, caméra`, 'camera', b.entityId)
+        b.alert.sensors.forEach((id) => check(`${t}, alerte`, 'alert', id))
         break
     }
   })

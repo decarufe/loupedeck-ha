@@ -22,6 +22,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 class StubDevice implements DevicePort {
   present = vi.fn()
   setLed = vi.fn()
+  vibrate = vi.fn()
   onInput() { return () => {} }
   onStatus() { return () => {} }
 }
@@ -191,6 +192,16 @@ describe('serveur de l’éditeur', () => {
     const wrong = structuredClone(store.get())
     ;(wrong.buttons[0] as CustomDashboard).keys[0] = { entityId: 'sensor.t' }
     expect((await put(body(wrong))).statusCode).toBe(400)
+  })
+
+  it('put_alert_sensor_placement_400', async () => {
+    await start()
+    ha.setEntity('light.salon', 'on', {})
+    const cfg = structuredClone(store.get())
+    ;(cfg.buttons[3] as CameraDashboard).alert = { enabled: true, sensors: ['light.salon'] }
+    const res = await put(body(cfg))
+    expect(res.statusCode).toBe(400)
+    expect(res.json().issues[0]).toContain('Bouton 4, alerte (light.salon)')
   })
 
   describe('export et import des réglages', () => {

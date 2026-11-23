@@ -44,6 +44,8 @@ const LIVE_PRODUCT_ID = 0x0004
 // Valeurs de HAPTIC (librairie loupedeck). HAPTIC.VERY_LONG (0x76) est interdit.
 const HAPTIC_SHORT = 0x01
 const HAPTIC_DESCEND_FAST = 0x48
+/** Alerte de caméra : montée puis descente, bien distincte du « ok » (court) et de l'« error » (descendant). */
+const HAPTIC_RISE_FALL = 0x6a
 /** Délai maximal accordé à close() pendant stop(). */
 const CLOSE_TIMEOUT_MS = 1000
 
@@ -210,9 +212,10 @@ export class DeviceLink {
     if (dev) this.fire('setBrightness', () => dev.setBrightness(this.brightness))
   }
 
-  vibrate(kind: 'ok' | 'error'): void {
+  vibrate(kind: 'ok' | 'error' | 'alert'): void {
     const dev = this.device
-    if (dev) this.fire('vibrate', () => dev.vibrate(kind === 'ok' ? HAPTIC_SHORT : HAPTIC_DESCEND_FAST))
+    const pattern = kind === 'ok' ? HAPTIC_SHORT : kind === 'error' ? HAPTIC_DESCEND_FAST : HAPTIC_RISE_FALL
+    if (dev) this.fire('vibrate', () => dev.vibrate(pattern))
   }
 
   // --- Connexion -----------------------------------------------------------

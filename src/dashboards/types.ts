@@ -9,4 +9,11 @@ export function isUnavailableState(state: string): boolean {
 }
 
 export interface DashboardDeps { ha: HaPort; actions: Actions; requestRender: () => void }
-export interface Dashboard { view(): View; handle(e: InputEvent): void; activate(): void; deactivate(): void }
+export interface Dashboard {
+  view(): View
+  handle(e: InputEvent): void
+  activate(): void
+  deactivate(): void
+  /** Appelé avant `activate()` quand une alerte ouvre la page : l'image précédente ne doit pas passer pour actuelle. */
+  prepareAlert?(): void
+}
