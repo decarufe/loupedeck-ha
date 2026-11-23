@@ -55,18 +55,29 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
 - **Réglages** : adresse Home Assistant (`http://…` ou `https://…`), jeton, certificat auto-signé,
   luminosité de la console. Le jeton saisi n'est jamais réaffiché ; changer d'adresse demande de le saisir
   à nouveau.
-- **Boutons ronds** : cliquez sur un bouton de la Live virtuelle pour choisir le type de tableau, son nom et
-  sa couleur.
-- **Entités** : glissez une entité de la palette sur une touche ou une molette (ou cliquez l'entité, puis
-  l'emplacement). Un dépôt refusé est expliqué. Libellé et icône se modifient dans le panneau de l'emplacement.
+- **Pages** : cliquez sur un bouton rond de la Live virtuelle. Une page vide propose cinq types de contenu :
+  **Bouton custom**, **Météo**, **Caméra**, **Contrôle de température**, **Graphique plein écran**. Pour
+  changer le type d'une page, videz-la d'abord (« Vider la page » ou « Vider les contrôles »). Glissez un
+  bouton rond sur un autre pour déplacer la page : les autres se décalent (Maj : échanger).
+- **Bouton custom** : chaque touche a un type — Interrupteur, Action (scène ou script, appui long en option),
+  État, Valeur, Graphique, Date et heure, ou Gradateur (sur les bandes latérales, réglé par la molette).
+  Glissez un type de touche ou une entité de la palette (le type est alors deviné), ou cliquez-le puis
+  l'emplacement. Un dépôt refusé est expliqué. Glissez une touche sur une autre pour la déplacer (les
+  suivantes se décalent ; Maj : échanger ; Ctrl : copier), ou sous la console pour la retirer.
+- **Graphique plein écran** : capteur numérique et fenêtre par défaut. Sur la console, les molettes du haut
+  règlent l'échelle et celles du milieu font défiler (à gauche verticalement, à droite horizontalement).
+- **Météo** : la zone haut droite de la console affiche la dernière mise à jour ; un appui l'actualise.
 - **Caméras** : entité, **Intervalle (ms)** (250 à 2000, par pas de 250) et **Cadrage** : « Plein écran »
-  (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires).
+  (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires). Sur la
+  console, la tuile haut gauche compte le temps depuis la dernière image (vert, ambre après 10 s, rouge
+  après 30 s) ; appui court : forcer une image, appui long : recharger l'intégration de la caméra.
 - **Annuler** revient à la configuration précédente. Chaque modification est enregistrée et appliquée à la
   console aussitôt ; l'aperçu suit la console en direct.
 
 Les modifications sont enregistrées dans `%APPDATA%\loupedeck-ha\config.json`, créé avec les valeurs par
-défaut au premier démarrage : Lumières sur le bouton 0, Température sur le 1, Météo sur le 2, quatre Caméras
-sur les boutons 3 à 6.
+défaut au premier démarrage : une page Bouton custom vide sur le bouton 0, Température sur le 1, Météo sur
+le 2, quatre Caméras sur les boutons 3 à 6. Une configuration de l'ancienne version (tableau Lumières) est
+convertie automatiquement en page Bouton custom.
 
 #### En recours : modifier le fichier à la main
 

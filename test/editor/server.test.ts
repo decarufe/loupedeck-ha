@@ -5,7 +5,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
-import { defaultConfig, type AppConfig, type CameraDashboard, type LightsDashboard } from '../../src/config/schema.js'
+import { defaultConfig, type AppConfig, type CameraDashboard, type CustomDashboard } from '../../src/config/schema.js'
 import { ConfigStore } from '../../src/config/store.js'
 import { DeviceLink } from '../../src/device/link.js'
 import { startEditorServer, type LiveMessage } from '../../src/editor/server.js'
@@ -174,19 +174,19 @@ describe('serveur de l’éditeur', () => {
     await start()
     ha.setEntity('light.lampe', 'on', { supported_color_modes: ['onoff'] })
     const cfg = structuredClone(store.get())
-    ;(cfg.buttons[0] as LightsDashboard).dimmers.knobTL = { entityId: 'light.lampe' }
+    ;(cfg.buttons[0] as CustomDashboard).strips.knobTL = { kind: 'dimmer', entityId: 'light.lampe' }
     const res = await put(body(cfg))
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toContain("n'est pas gradable")
     expect(store.get().buttons[0]).toEqual(defaultConfig().buttons[0])
     // Entité inconnue de HA : acceptée.
     const unknown = structuredClone(store.get())
-    ;(unknown.buttons[0] as LightsDashboard).dimmers.knobTL = { entityId: 'light.inconnue' }
+    ;(unknown.buttons[0] as CustomDashboard).strips.knobTL = { kind: 'dimmer', entityId: 'light.inconnue' }
     expect((await put(body(unknown))).statusCode).toBe(200)
     // Mauvais domaine sur une touche.
     ha.setEntity('sensor.t', '20', { device_class: 'temperature' })
     const wrong = structuredClone(store.get())
-    ;(wrong.buttons[0] as LightsDashboard).keys[0] = { entityId: 'sensor.t' }
+    ;(wrong.buttons[0] as CustomDashboard).keys[0] = { entityId: 'sensor.t' }
     expect((await put(body(wrong))).statusCode).toBe(400)
   })
 
@@ -421,5 +421,39 @@ describe('serveur de l’éditeur', () => {
       await ed().close()
       await closed
     })
+  })
+
+  it('page_commands_reach_home_assistant', async () => {
+    await start()
+    const cfg = structuredClone(store.get())
+    const w = cfg.buttons[2]
+    if (w?.type === 'weather') w.entityId = 'weather.home'
+    const c = cfg.buttons[3]
+    if (c?.type === 'camera') c.entityId = 'camera.porte'
+    expect((await put(body(cfg))).statusCode).toBe(200)
+    const cmd = (i: number, command: string) => request('POST', `/api/pages/${i}/command`, { payload: { command }, headers: { ...editorHeaders(), 'content-type': 'application/json' } })
+    expect((await cmd(2, 'refresh')).statusCode).toBe(200)
+    expect((await cmd(3, 'reload')).statusCode).toBe(200)
+    expect((await cmd(3, 'refresh')).statusCode).toBe(200)
+    expect(ha.calls.map((x) => [x.service, (x.target as { entity_id: string }).entity_id])).toEqual([
+      ['update_entity', 'weather.home'], ['reload_config_entry', 'camera.porte'],
+    ])
+    expect((await cmd(2, 'reload')).statusCode).toBe(400)
+    expect((await cmd(4, 'reload')).statusCode).toBe(400) // caméra sans entité
+    expect((await cmd(9, 'reload')).statusCode).toBe(404)
+  })
+
+  it('put_accepts_v1_config_and_migrates_it', async () => {
+    await start()
+    const cfg = body(store.get()) as Record<string, any>
+    cfg.version = 1
+    cfg.buttons[0] = { type: 'lights', name: 'Lumières', color: '#FFB300', keys: Array(12).fill(null), dimmers: { knobTL: null, knobCL: null, knobBL: null, knobTR: null, knobCR: null, knobBR: null } }
+    cfg.buttons[0].keys[0] = { entityId: 'switch.cafe' }
+    const res = await put(cfg)
+    expect(res.statusCode).toBe(200)
+    expect(store.get().version).toBe(2)
+    const b = store.get().buttons[0]
+    expect(b?.type).toBe('custom')
+    expect(b?.type === 'custom' && b.keys[0]).toEqual({ kind: 'toggle', entityId: 'switch.cafe' })
   })
 })

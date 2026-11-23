@@ -1,6 +1,6 @@
 import type { Logger } from '../log.js'
 import type { EntityInfo } from '../shared/placement.js'
-import type { Forecast, ForecastType, HaEntity, HaPort, HaStatus } from './types.js'
+import type { Forecast, ForecastType, HaEntity, HaPort, HaStatus, HistoryPoint } from './types.js'
 
 /**
  * HaPort stable donné à Actions, Navigator et aux tableaux : quand la section `ha` de la configuration
@@ -51,6 +51,10 @@ export class HaProxy implements HaPort {
 
   getForecasts(entityId: string, type: ForecastType): Promise<Forecast[]> {
     return this.inner.getForecasts(entityId, type)
+  }
+
+  getHistory(entityId: string, startMs: number, endMs: number): Promise<HistoryPoint[]> {
+    return this.inner.getHistory(entityId, startMs, endMs)
   }
 
   listEntityInfo(): Promise<EntityInfo[]> {

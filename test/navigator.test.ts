@@ -107,7 +107,7 @@ describe('Navigator', () => {
     stored = 2
     nav.applyConfig(defaultConfig())
     expect(device.setLed).toHaveBeenCalledWith(2, '#03A9F4')
-    expect(device.setLed).toHaveBeenCalledWith(0, dim('#FFB300', 0.15))
+    expect(device.setLed).toHaveBeenCalledWith(0, dim('#26A69A', 0.15))
     expect(device.setLed).toHaveBeenCalledWith(7, '#000000')
   })
 

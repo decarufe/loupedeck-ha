@@ -6,6 +6,8 @@ export type InputEvent =
   | { type: 'knobTurn'; knob: KnobId; delta: number }
   | { type: 'knobPress'; knob: KnobId }
   | { type: 'tap'; target: TapTarget }
+  /** Fin d'un toucher : avec `tap`, sert à distinguer l'appui court de l'appui long. */
+  | { type: 'release'; target: TapTarget }
 
 export type RawInputEventName = 'down' | 'up' | 'rotate' | 'touchstart' | 'touchmove' | 'touchend'
 
@@ -49,6 +51,11 @@ export function normalizeInput(event: RawInputEventName, payload: any): InputEve
       const touch = payload?.changedTouches?.[0]
       const target = touch ? tapTarget(touch) : null
       return target ? { type: 'tap', target } : null
+    }
+    case 'touchend': {
+      const touch = payload?.changedTouches?.[0]
+      const target = touch ? tapTarget(touch) : null
+      return target ? { type: 'release', target } : null
     }
     default:
       return null

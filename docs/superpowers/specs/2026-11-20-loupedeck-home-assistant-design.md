@@ -103,7 +103,7 @@ Le serveur MCP de Home Assistant ne voit que les entités exposées à Assist. L
 - Lire les caméras en RTSP direct depuis le PC, ou obtenir de la vidéo fluide : en v1, tout passe par Home Assistant. La source WebRTC pour Alarm.com dépend de l'essai n° 2.
 - Mettre la console en veille ou l'atténuer automatiquement : elle reste à la luminosité réglée (pleine par défaut), à la demande de l'utilisateur.
 - Piloter la maison depuis la Live virtuelle de l'éditeur : elle sert seulement à modifier la disposition, mais elle affiche les états réels.
-- Ajouter des types de tableau au-delà des quatre décrits : médias, scènes, alarme. L'architecture doit cependant permettre d'en ajouter facilement (section 7).
+- Ajouter des types de tableau au-delà des quatre décrits : médias, scènes, alarme. L'architecture doit cependant permettre d'en ajouter facilement (section 7). *(Révisé le 2026-11-22 : voir `2026-11-22-types-de-page-design.md`.)* Cinq types de page désormais ; les scènes se posent sur une touche Action.
 - Gérer plusieurs utilisateurs ou un accès depuis un autre poste : l'éditeur écoute sur `localhost` seulement.
 
 ## 5. Anti-objectifs (ce qui serait un échec même si « ça marche »)
@@ -111,7 +111,7 @@ Le serveur MCP de Home Assistant ne voit que les entités exposées à Assist. L
 - **Afficher un état faux sans le signaler.** Une lumière montrée « allumée » alors qu'elle est éteinte, ou un état figé après une perte de connexion.
 - **Une console qui gèle ou demande un redémarrage manuel** après une veille de l'écran, un débranchement ou un redémarrage du Pi. La librairie a des attentes sans délai d'expiration : voir la section 9.
 - **Des actions accidentelles :**
-  - une page caméra qui déclenche quelque chose au toucher ;
+  - une page caméra qui déclenche quelque chose au toucher ; *(Révisé le 2026-11-22 : voir `2026-11-22-types-de-page-design.md`.)* Seule la tuile compteur haut gauche réagit : appui court = forcer une image, appui long = recharger l'intégration.
   - une molette qui envoie des dizaines d'appels de service à Home Assistant en une seconde.
 - **Un jeton Home Assistant exposé** sur le réseau ou affiché en clair dans l'éditeur une fois saisi.
 - **Un éditeur dont l'aperçu ne correspond pas à la console.**
@@ -289,7 +289,7 @@ Ces points ont été soulevés par la relecture du document par des constructeur
 3. **Valeur affichée contre état réel.**
    - Pendant la rotation d'une molette, et environ 1,5 s après, l'affichage suit la molette ; ensuite, c'est l'état Home Assistant qui fait foi.
    - Après une bascule, la tuile est marquée « en attente » jusqu'à ce que Home Assistant confirme. Sans confirmation au bout d'environ 3 s, elle revient à l'état de Home Assistant et une vibration d'erreur se déclenche.
-4. **Caméra figée ou Home Assistant hors ligne.**
+4. **Caméra figée ou Home Assistant hors ligne.** *(Révisé le 2026-11-22 : voir `2026-11-22-types-de-page-design.md`.)* Une tuile compteur est dessinée en haut à gauche ; l'image figée (30 s) ne passe plus en gris.
    - On ne dessine rien par-dessus l'image.
    - Après environ 5 s sans nouvelle image, l'image passe en niveaux de gris et la LED du bouton actif clignote en rouge.
 5. **Plein écran caméra.** `drawBuffer({ id: 'left', x: 0, y: 0, width: 480, height: 270 })` couvre tout le framebuffer, car `left` n'a pas de décalage. C'est vérifié dans le code de la librairie.
@@ -310,14 +310,14 @@ Ces points ont été soulevés par la relecture du document par des constructeur
 
 ### Éditeur
 
-11. **Placement dans l'éditeur.**
+11. **Placement dans l'éditeur.** *(Révisé le 2026-11-22 : voir `2026-11-22-types-de-page-design.md`.)* Le tableau Lumières devient la page Bouton custom, avec sept types de touche.
     - Lumières : 12 emplacements centraux (touches 0 à 11, trous permis) qui acceptent `light.*` et `switch.*`. 6 emplacements latéraux, un par molette, qui n'acceptent que les lumières gradables. L'éditeur refuse un dépôt invalide et explique pourquoi.
     - Température : on choisit l'entité `climate.*`, plus d'éventuels capteurs en option.
     - Météo et Caméra : pas de touches à modifier, on choisit seulement l'entité.
 12. **Enregistrement.**
     - Chaque action terminée est enregistrée et appliquée aussitôt : dépôt, renommage (validé quand on quitte le champ), couleur. Un bouton Annuler permet de revenir en arrière.
     - Pas de brouillon : l'aperçu et la console ne divergent jamais.
-13. **Changer le type d'un bouton** demande une confirmation, puis supprime les touches de l'ancien tableau.
+13. **Changer le type d'un bouton** demande une confirmation, puis supprime les touches de l'ancien tableau. *(Révisé le 2026-11-22 : voir `2026-11-22-types-de-page-design.md`.)* Le type ne se choisit que sur une page vide ; on vide d'abord la page.
 14. **Tableaux et boutons.**
     - On peut mettre deux tableaux du même type sur deux boutons, par exemple deux tableaux Lumières.
     - Un bouton peut rester libre.

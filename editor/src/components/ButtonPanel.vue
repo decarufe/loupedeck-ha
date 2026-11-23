@@ -1,35 +1,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { emptyDashboard, type DashboardConfig } from '@shared/config/schema'
-import { save, state } from '../store'
+import { DASHBOARD_LABELS, DASHBOARD_TYPES, isEmptyPage, type DashboardType } from '@shared/config/schema'
+import { clearPage, removePage, save, setPageType, state } from '../store'
 import DashboardEntities from './DashboardEntities.vue'
 import SlotEditor from './SlotEditor.vue'
 
-type Kind = DashboardConfig['type']
-const TYPES: { value: Kind; label: string }[] = [
-  { value: 'lights', label: 'Lumières' },
-  { value: 'climate', label: 'Température' },
-  { value: 'weather', label: 'Météo' },
-  { value: 'camera', label: 'Caméra' },
-]
+const DESCRIPTIONS: Record<DashboardType, string> = {
+  custom: 'Grille de touches et bandes à composer',
+  weather: 'Conditions actuelles et prévisions',
+  camera: 'Image d’une caméra en plein écran',
+  climate: 'Thermostat : température, consigne et mode',
+  graph: 'Courbe d’un capteur ; molettes : échelle et défilement',
+}
 
 const index = computed(() => state.selectedButton)
 const dashboard = computed(() => state.config?.buttons[index.value] ?? null)
-const current = computed(() => dashboard.value?.type ?? '')
-
-function changeType(e: Event) {
-  const el = e.target as HTMLSelectElement
-  const value = el.value as Kind | ''
-  if (value === current.value) return
-  const label = value === '' ? 'vide' : TYPES.find((t) => t.value === value)!.label
-  const msg = `Changer le type du bouton ${index.value + 1} en « ${label} » ? La configuration actuelle de ce bouton sera perdue.`
-  if (!window.confirm(msg)) {
-    el.value = current.value
-    return
-  }
-  const i = index.value
-  void save((cfg) => { cfg.buttons[i] = value === '' ? null : emptyDashboard(value, i) })
-}
+const empty = computed(() => isEmptyPage(dashboard.value))
+const current = computed(() => dashboard.value?.type ?? null)
 
 function rename(e: Event) {
   const name = (e.target as HTMLInputElement).value
@@ -52,35 +39,66 @@ function commitOnEnter(e: Event) {
 
 <template>
   <section class="panel" :aria-label="`Configuration du bouton rond ${index + 1}`">
-    <h2>Bouton rond {{ index + 1 }}</h2>
-    <label>
-      Type
-      <select class="type-select" :value="current" @change="changeType">
-        <option value="">Vide</option>
-        <option v-for="t in TYPES" :key="t.value" :value="t.value">{{ t.label }}</option>
-      </select>
-    </label>
+    <header class="head">
+      <h2>Page du bouton {{ index + 1 }}</h2>
+      <span v-if="dashboard" class="actions">
+        <button v-if="!empty" type="button" class="clear-page" title="Retire tout le contenu : la page redevient vide et son type peut être choisi" @click="clearPage(index)">
+          {{ current === 'custom' ? 'Vider les contrôles' : 'Vider la page' }}
+        </button>
+        <button type="button" class="remove-page danger" @click="removePage(index)">Retirer</button>
+      </span>
+    </header>
+
+    <div class="field">
+      <span>Type de contenu</span>
+      <div v-if="empty" class="types" role="group" aria-label="Type de contenu de la page">
+        <button
+          v-for="t in DASHBOARD_TYPES" :key="t" type="button" class="type-choice" :data-type="t"
+          :aria-pressed="current === t" @click="setPageType(index, t)"
+        >
+          <span class="n">{{ DASHBOARD_LABELS[t] }}</span>
+          <span class="d">{{ DESCRIPTIONS[t] }}</span>
+        </button>
+      </div>
+      <p v-else class="type-fixed">{{ DASHBOARD_LABELS[current!] }}</p>
+    </div>
+
     <template v-if="dashboard">
       <label>
         Nom
         <input class="name-input" type="text" :value="dashboard.name" @blur="rename" @keydown.enter="commitOnEnter" />
       </label>
       <label>
-        Couleur
+        Couleur de la LED
         <input class="color-input" type="color" :value="dashboard.color.toLowerCase()" @change="recolor" />
       </label>
       <DashboardEntities />
       <SlotEditor />
+      <p class="hint">
+        <template v-if="current === 'custom' && empty">Page vide : glissez un type de touche ou une entité sur la console pour en faire une page Bouton custom, ou choisissez un autre type ci-dessus.</template>
+        <template v-else-if="current === 'custom'">Cliquez une touche pour la régler. Glissez une touche sur une autre pour la déplacer (les suivantes se décalent ; Maj : échanger ; Ctrl : copier), ou sous la console pour la retirer.</template>
+        <template v-else>Pour changer le type de la page, videz-la d’abord.</template>
+        Glissez un bouton rond sur un autre pour déplacer la page (Maj : échanger).
+      </p>
     </template>
-    <p v-else class="hint">Ce bouton est vide : choisissez un type pour le configurer.</p>
+    <p v-else class="hint">Ce bouton n’a pas de page : choisissez le type de contenu qu’elle affichera.</p>
   </section>
 </template>
 
 <style scoped>
-.panel { display: flex; flex-direction: column; gap: 0.8rem; min-width: 16rem; background: #1c1c1c; padding: 1rem; border-radius: 8px; }
+.panel { display: flex; flex-direction: column; gap: 0.8rem; min-width: 16rem; max-width: 22rem; background: #1c1c1c; padding: 1rem; border-radius: 8px; }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.actions { display: flex; gap: 0.4rem; }
 h2 { font-size: 1.05rem; margin: 0; }
-label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-select, input[type='text'] { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #555; border-radius: 6px; padding: 0.35rem; }
+label, .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+input[type='text'] { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #555; border-radius: 6px; padding: 0.35rem; }
 input[type='color'] { width: 4rem; height: 2rem; padding: 0; background: none; border: 1px solid #555; }
-.hint { color: #aaa; margin: 0; }
+.types { display: flex; flex-direction: column; gap: 0.35rem; }
+.type-choice { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 0.1rem; }
+.type-choice .n { font-weight: 600; }
+.type-choice .d { font-size: 0.78rem; color: #aaa; }
+.type-choice[aria-pressed='true'] { border-color: #4fc3f7; background: #1d3a4a; }
+.type-fixed { margin: 0; padding: 0.4rem 0.6rem; background: #2a2a2a; border-radius: 6px; }
+.danger { color: #f3b1b1; border-color: #5a2a2a; }
+.hint { color: #aaa; margin: 0; font-size: 0.85rem; line-height: 1.4; }
 </style>

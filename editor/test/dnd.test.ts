@@ -30,10 +30,19 @@ describe('glisser-déposer et emplacements', () => {
     const m = mockFetch(publicConfig(), { entities: entities() })
     const w = await mountEditor()
     await flushPromises()
+    await w.get('.dimmer-slot[data-knob=knobTL]').trigger('drop', drop('weather.home'))
+    await flushPromises()
+    expect(state.error).toBe('home ne peut pas aller sur une bande latérale.')
+    expect(m.puts()).toHaveLength(0)
+  })
+
+  it('non_dimmable_light_on_strip_becomes_toggle', async () => {
+    const m = mockFetch(publicConfig(), { entities: entities() })
+    const w = await mountEditor()
+    await flushPromises()
     await w.get('.dimmer-slot[data-knob=knobTL]').trigger('drop', drop('light.plug'))
     await flushPromises()
-    expect(state.error).toBe("Cette lumière n'est pas gradable : placez-la sur une touche centrale.")
-    expect(m.puts()).toHaveLength(0)
+    expect(m.puts()[0]!.body.buttons[0].strips.knobTL).toEqual({ kind: 'toggle', entityId: 'light.plug' })
   })
 
   it('drop_valid_puts_slot', async () => {
@@ -43,7 +52,7 @@ describe('glisser-déposer et emplacements', () => {
     await w.get('.key-slot[data-key="4"]').trigger('drop', drop('light.salon'))
     await flushPromises()
     expect(m.puts()).toHaveLength(1)
-    expect(m.puts()[0]!.body.buttons[0].keys[4]).toEqual({ entityId: 'light.salon' })
+    expect(m.puts()[0]!.body.buttons[0].keys[4]).toEqual({ kind: 'toggle', entityId: 'light.salon' })
     expect(state.error).toBeNull()
   })
 
@@ -55,7 +64,7 @@ describe('glisser-déposer et emplacements', () => {
     await w.get('.dimmer-slot[data-knob=knobCL]').trigger('click')
     await flushPromises()
     expect(m.puts()).toHaveLength(1)
-    expect(m.puts()[0]!.body.buttons[0].dimmers.knobCL).toEqual({ entityId: 'light.salon' })
+    expect(m.puts()[0]!.body.buttons[0].strips.knobCL).toEqual({ kind: 'dimmer', entityId: 'light.salon' })
     // La sélection est consommée : un clic suivant n'écrase rien.
     await w.get('.key-slot[data-key="0"]').trigger('click')
     await flushPromises()
@@ -69,14 +78,14 @@ describe('glisser-déposer et emplacements', () => {
     await w.findAll('.entity-row').find((r) => r.text().includes('weather.home'))!.trigger('click')
     await w.get('.key-slot[data-key="1"]').trigger('click')
     await flushPromises()
-    expect(state.error).toBe('Une touche accepte seulement une lumière ou une prise (interrupteur).')
+    expect(state.error).toBe('home ne peut pas aller sur une touche centrale.')
     expect(m.puts()).toHaveLength(0)
   })
 
   it('slot_editor_label_icon_blur', async () => {
     const m = mockFetch(withButtons((c) => {
       const b = c.buttons[0]
-      if (b?.type === 'lights') b.keys[2] = { entityId: 'light.salon' }
+      if (b?.type === 'custom') b.keys[2] = { kind: 'toggle', entityId: 'light.salon' }
     }), { entities: entities() })
     const w = await mountEditor()
     await flushPromises()
@@ -88,13 +97,13 @@ describe('glisser-déposer et emplacements', () => {
     await label.trigger('blur')
     await flushPromises()
     expect(m.puts()).toHaveLength(1)
-    expect(m.puts()[0]!.body.buttons[0].keys[2]).toEqual({ entityId: 'light.salon', label: 'Lampe' })
+    expect(m.puts()[0]!.body.buttons[0].keys[2]).toEqual({ kind: 'toggle', entityId: 'light.salon', label: 'Lampe' })
 
     const icon = w.get('input.slot-icon')
     await icon.setValue('mdi:lamp')
     await icon.trigger('blur')
     await flushPromises()
-    expect(m.puts()[1]!.body.buttons[0].keys[2]).toEqual({ entityId: 'light.salon', label: 'Lampe', icon: 'mdi:lamp' })
+    expect(m.puts()[1]!.body.buttons[0].keys[2]).toEqual({ kind: 'toggle', entityId: 'light.salon', label: 'Lampe', icon: 'mdi:lamp' })
 
     await w.get('button.slot-remove').trigger('click')
     await flushPromises()

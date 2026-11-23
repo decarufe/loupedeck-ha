@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeHa } from '../fakes/fake-ha.js'
 import { Actions } from '../../src/ha/actions.js'
-import { createCameraDashboard, STALE_MS } from '../../src/dashboards/camera.js'
+import { createCameraDashboard, STALE_MS, WARN_MS } from '../../src/dashboards/camera.js'
 import { createHaProxySource, type CameraSource } from '../../src/camera/source.js'
 import type { FullView } from '../../src/views.js'
 import type { CameraDashboard } from '../../src/config/schema.js'
@@ -121,35 +121,75 @@ describe('tableau Caméra', () => {
     d.deactivate()
   })
 
-  it('stale_after_5s', async () => {
+  it('age_counter_turns_amber_then_red', async () => {
     let hang = false
     const d = make(probe({ hang: () => hang }))
     d.activate()
     await vi.advanceTimersByTimeAsync(10)
-    expect(fv(d).stale).toBe(false)
+    expect(fv(d).age).toMatchObject({ text: '0 s', level: 'ok', busy: null })
     hang = true
-    await vi.advanceTimersByTimeAsync(1000) // la source reste pendante
-    render.mockClear()
-    await vi.advanceTimersByTimeAsync(STALE_MS + 1 - 1000)
+    await vi.advanceTimersByTimeAsync(WARN_MS)
+    expect(fv(d).age?.level).toBe('warn')
+    expect(fv(d).stale).toBe(false)
+    await vi.advanceTimersByTimeAsync(STALE_MS - WARN_MS)
+    expect(fv(d).age).toMatchObject({ level: 'bad', text: '30 s' })
     expect(fv(d).stale).toBe(true)
-    expect(render).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(3000)
-    expect(render).toHaveBeenCalledTimes(1) // pas de rendu répété tant que l'état ne change pas
     d.deactivate()
   })
 
-  it('stale_view_matches_tick_render', async () => {
+  it('age_counter_renders_every_second', async () => {
     let hang = false
     const d = make(probe({ hang: () => hang }))
-    let staleAtRender: boolean[] = []
-    render.mockImplementation(() => { staleAtRender.push(fv(d).stale) })
     d.activate()
     await vi.advanceTimersByTimeAsync(10)
     hang = true
     await vi.advanceTimersByTimeAsync(1000)
-    staleAtRender = []
-    await vi.advanceTimersByTimeAsync(4000 - 10) // t = 5000 : age exactement 5000
-    expect(staleAtRender).toEqual([true])
+    render.mockClear()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(render).toHaveBeenCalledTimes(3)
+    d.deactivate()
+  })
+
+  it('tile_short_press_fetches_now', async () => {
+    const src = probe()
+    const d = make(src, cfg({ intervalMs: 2000 }))
+    d.activate()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(src.calls).toBe(1)
+    d.handle({ type: 'tap', target: { kind: 'strip', side: 'left', zone: 0 } })
+    d.handle({ type: 'release', target: { kind: 'strip', side: 'left', zone: 0 } })
+    expect(fv(d).age?.busy).toBe('refresh')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(src.calls).toBe(2)
+    expect(fv(d).age?.busy).toBeNull()
+    d.deactivate()
+  })
+
+  it('tile_long_press_reloads_integration', async () => {
+    const d = make(probe())
+    d.activate()
+    await vi.advanceTimersByTimeAsync(10)
+    d.handle({ type: 'tap', target: { kind: 'strip', side: 'left', zone: 0 } })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(ha.calls).toContainEqual({ domain: 'homeassistant', service: 'reload_config_entry', data: undefined, target: { entity_id: 'camera.porte' } })
+    d.handle({ type: 'release', target: { kind: 'strip', side: 'left', zone: 0 } })
+    await vi.advanceTimersByTimeAsync(10)
+    expect(fv(d).age?.busy).toBeNull()
+    d.deactivate()
+  })
+
+  it('touch_outside_tile_does_nothing', async () => {
+    const src = probe()
+    const d = make(src, cfg({ intervalMs: 2000 }))
+    d.activate()
+    await vi.advanceTimersByTimeAsync(10)
+    for (const target of [{ kind: 'key', index: 0 }, { kind: 'strip', side: 'left', zone: 1 }, { kind: 'strip', side: 'right', zone: 0 }] as const) {
+      d.handle({ type: 'tap', target })
+      await vi.advanceTimersByTimeAsync(1100)
+      d.handle({ type: 'release', target })
+    }
+    expect(ha.calls).toEqual([])
+    expect(fv(d).age?.busy).toBeNull()
     d.deactivate()
   })
 
@@ -171,7 +211,7 @@ describe('tableau Caméra', () => {
     d.activate()
     await vi.advanceTimersByTimeAsync(10)
     hang = true
-    await vi.advanceTimersByTimeAsync(6000)
+    await vi.advanceTimersByTimeAsync(STALE_MS + 1000)
     expect(fv(d).stale).toBe(true)
     d.deactivate()
     hang = false

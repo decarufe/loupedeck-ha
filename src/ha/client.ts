@@ -16,7 +16,7 @@ import { Agent, fetch } from 'undici'
 import WebSocket from 'ws'
 import type { Logger } from '../log.js'
 import { isDimmable, type EntityInfo } from '../shared/placement.js'
-import { CameraImageError, OFFLINE_MESSAGE, type Forecast, type ForecastType, type HaEntity, type HaPort, type HaStatus } from './types.js'
+import { CameraImageError, OFFLINE_MESSAGE, type Forecast, type ForecastType, type HaEntity, type HaPort, type HaStatus, type HistoryPoint } from './types.js'
 
 /** Délai maximal de la phase d'ouverture + authentification d'une socket. */
 const AUTH_TIMEOUT_MS = 10_000
@@ -290,6 +290,25 @@ export class HaClient implements HaPort {
     }))
   }
 
+  async getHistory(entityId: string, startMs: number, endMs: number): Promise<HistoryPoint[]> {
+    const conn = this.requireConn()
+    let res: Record<string, unknown[]> | undefined
+    try {
+      res = await conn.sendMessagePromise<Record<string, unknown[]>>({
+        type: 'history/history_during_period',
+        start_time: new Date(startMs).toISOString(),
+        end_time: new Date(endMs).toISOString(),
+        entity_ids: [entityId],
+        minimal_response: true,
+        no_attributes: true,
+        significant_changes_only: false,
+      })
+    } catch (err) {
+      throw toError(err, this.scrub)
+    }
+    return parseHistory(res?.[entityId])
+  }
+
   async listEntityInfo(): Promise<EntityInfo[]> {
     const conn = this.requireConn()
     let registry: RegistryEntity[]
@@ -320,6 +339,7 @@ export class HaClient implements HaPort {
         dimmable: isDimmable(attrs),
         deviceClass: attrs.device_class ?? reg?.device_class ?? reg?.original_device_class ?? null,
         icon: attrs.icon ?? reg?.icon ?? null,
+        unit: typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : null,
       }
     })
   }
@@ -492,4 +512,22 @@ export class HaClient implements HaPort {
     this.setStatus({ state: 'online', reason: null })
     this.startHeartbeat(conn)
   }
+}
+
+/**
+ * Réponse de `history/history_during_period` : états compressés (`s`, `lu` en secondes)
+ * ou complets (`state`, `last_updated` ISO). Les états non numériques sont ignorés.
+ */
+export function parseHistory(list: unknown[] | undefined): HistoryPoint[] {
+  if (!Array.isArray(list)) return []
+  const out: HistoryPoint[] = []
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue
+    const r = raw as Record<string, unknown>
+    const v = Number.parseFloat(String(r.s ?? r.state))
+    const when = r.lu ?? r.lc ?? r.last_updated ?? r.last_changed
+    const t = typeof when === 'number' ? when * 1000 : typeof when === 'string' ? Date.parse(when) : NaN
+    if (Number.isFinite(v) && Number.isFinite(t)) out.push({ t, v })
+  }
+  return out.sort((a, b) => a.t - b.t)
 }

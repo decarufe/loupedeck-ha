@@ -53,6 +53,7 @@ export function mockFetch(initial: PublicConfig = publicConfig(), opts: MockOpti
       }
     }
     if (url === '/api/config/undo' && method === 'POST') return json(current)
+    if (url.startsWith('/api/pages/') && method === 'POST') return json({ ok: true })
     if (url === '/api/config') return json(current)
     if (url === '/api/status') return json({ device: { status: 'connected', firmware: '0.2.5' }, ha: { state: 'online' }, activeButton: -1 })
     if (url === '/api/entities') return entitiesStatus === 200 ? json(entities) : json({ error: 'Home Assistant hors ligne' }, entitiesStatus)

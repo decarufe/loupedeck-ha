@@ -86,13 +86,20 @@ export class Navigator {
     const previous = this.active
     this.stopBlink()
     this.dashboards[this.active]?.deactivate()
+    const before = this.active >= 0 ? JSON.stringify(this.cfgs[this.active] ?? null) : null
     this.cfgs = Array.from({ length: BUTTON_COUNT }, (_, i) => cfg.buttons[i] ?? null)
     const deps = { ha: this.ha, actions: this.actions, requestRender: () => this.requestRender() }
     this.dashboards = this.cfgs.map(c => (c ? this.makeDashboard(c, deps) : null))
-    const wanted = this.state.activeButton()
+    const stored = this.state.activeButton()
+    let wanted = stored
+    // Pages réordonnées dans l'éditeur : la console reste sur la même page, qui a changé de bouton.
+    if (before !== null && before !== 'null' && JSON.stringify(this.cfgs[wanted] ?? null) !== before) {
+      const moved = this.cfgs.findIndex((c) => c !== null && JSON.stringify(c) === before)
+      if (moved >= 0) wanted = moved
+    }
     this.active = this.cfgs[wanted] ? wanted : this.cfgs.findIndex(c => c !== null)
     this.dashboards[this.active]?.activate()
-    if (this.active >= 0 && this.active !== wanted) this.persist(this.active)
+    if (this.active >= 0 && this.active !== stored) this.persist(this.active)
     this.applyLeds()
     this.requestRender()
     if (this.active !== previous) this.emitActive()

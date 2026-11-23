@@ -11,7 +11,7 @@ describe('LiveDevice', () => {
     const w = await mountEditor()
     const rounds = w.findAll('.round-button')
     expect(rounds).toHaveLength(8)
-    expect(rounds[0]!.attributes('style')).toContain('background-color: rgb(255, 179, 0)')
+    expect(rounds[0]!.attributes('style')).toContain('background-color: rgb(38, 166, 154)')
     expect(rounds[7]!.classes()).toContain('empty')
     expect(rounds[2]!.attributes('aria-label')).toBe('Bouton rond 3 — Météo')
   })
@@ -28,7 +28,7 @@ describe('LiveDevice', () => {
 
   it('key_and_strip_hotspots', async () => {
     mockFetch()
-    const w = await mountEditor() // le bouton 0 est le tableau Lumières
+    const w = await mountEditor() // le bouton 0 est une page Bouton custom
     expect(w.findAll('.key-slot')).toHaveLength(12)
     expect(w.findAll('.dimmer-slot')).toHaveLength(6)
     const dimmers = w.findAll('.dimmer-slot')

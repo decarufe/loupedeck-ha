@@ -169,4 +169,35 @@ describe('tableau Météo', () => {
   it('handle_is_noop', () => {
     expect(() => make().handle({ type: 'knobTurn', knob: 'knobTR', delta: 1 })).not.toThrow()
   })
+
+  it('shows_last_update_and_refreshes_on_top_right_tap', async () => {
+    const d = make()
+    d.activate()
+    await flush()
+    const first = wv(d).updated
+    expect(first?.busy).toBe(false)
+    expect(first?.text).toMatch(/20 nov\., 15 h 00/)
+    vi.setSystemTime(new Date('2026-11-20T15:42:00'))
+    ha.forecastCalls.length = 0
+    d.handle({ type: 'tap', target: { kind: 'strip', side: 'right', zone: 0 } })
+    expect(wv(d).updated).toMatchObject({ busy: true, text: 'Actualisation…' })
+    await flush()
+    expect(ha.calls).toContainEqual({ domain: 'homeassistant', service: 'update_entity', data: undefined, target: { entity_id: 'weather.home' } })
+    expect(ha.forecastCalls).toHaveLength(1)
+    expect(wv(d).updated?.text).toMatch(/15 h 42/)
+    d.deactivate()
+  })
+
+  it('other_touches_do_not_refresh', async () => {
+    const d = make()
+    d.activate()
+    await flush()
+    ha.forecastCalls.length = 0
+    d.handle({ type: 'tap', target: { kind: 'key', index: 3 } })
+    d.handle({ type: 'tap', target: { kind: 'strip', side: 'left', zone: 0 } })
+    await flush()
+    expect(ha.calls).toEqual([])
+    expect(ha.forecastCalls).toEqual([])
+    d.deactivate()
+  })
 })
