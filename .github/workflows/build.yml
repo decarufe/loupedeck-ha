@@ -1,0 +1,49 @@
+name: build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc -p . --noEmit
+      - run: pnpm test
+      - run: pnpm run build
+
+  release:
+    if: github.event_name == 'push'
+    needs: check
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    # Deux fusions rapprochées publient dans l'ordre, sans s'annuler.
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      # Version 0.2.<numéro du run> : écrite dans le paquet, étiquette v0.2.<n> créée par electron-builder.
+      - run: pnpm exec electron-builder --win --publish always -c.extraMetadata.version=0.2.${{ github.run_number }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
