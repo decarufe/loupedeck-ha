@@ -1,13 +1,20 @@
 import type { Logger } from './log.js'
+import { isShellToApp, type AppToShell } from './shared/ipc.js'
 
-/** Sortie volontaire (Ctrl+C, SIGINT, SIGTERM) : le lanceur (launch-hidden.vbs) ne relance pas. */
+/** Sortie volontaire (Ctrl+C, SIGINT, SIGTERM, demande du shell) : le superviseur du shell ne relance pas. */
 export const EXIT_OK = 0
-/** Plantage (exception non rattrapée, démarrage impossible) : le lanceur relance après 5 s. */
+/** Plantage (exception non rattrapée, démarrage impossible) : le superviseur du shell relance après 5 s. */
 export const EXIT_CRASH = 1
 
 export interface ProcessLike {
   on(event: string, listener: (...args: any[]) => void): unknown
   exit(code: number): void
+}
+
+/** Canal vers le shell Electron (`process.parentPort` dans un utilityProcess). */
+export interface ParentPortLike {
+  on(event: 'message', listener: (e: { data: unknown }) => void): unknown
+  postMessage(msg: AppToShell): void
 }
 
 export interface ProcessHandlersOptions {
@@ -17,6 +24,8 @@ export interface ProcessHandlersOptions {
   describe: (err: unknown) => object
   /** Arrêt propre de l'application (peut être absent si elle n'a pas démarré). */
   stop: () => Promise<void> | undefined
+  /** Présent quand l'application tourne sous le shell : un message `{ type: 'stop' }` l'arrête proprement. */
+  parentPort?: ParentPortLike
 }
 
 /**
@@ -47,4 +56,5 @@ export function installProcessHandlers(o: ProcessHandlersOptions): void {
   }
   proc.on('SIGINT', (s: string) => { void shutdown(s) })
   proc.on('SIGTERM', (s: string) => { void shutdown(s) })
+  o.parentPort?.on('message', (e) => { if (isShellToApp(e?.data)) void shutdown('parent') })
 }

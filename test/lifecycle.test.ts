@@ -68,4 +68,48 @@ describe('installProcessHandlers', () => {
     expect(log.error).toHaveBeenCalled()
     expect(proc.exit).not.toHaveBeenCalled()
   })
+
+  describe('parentPort', () => {
+    function fakePort() {
+      const port = Object.assign(new EventEmitter(), { postMessage: vi.fn() })
+      const send = (data: unknown) => port.emit('message', { data })
+      return { port, send }
+    }
+
+    it('un message { type: stop } du parent arrête proprement et sort à 0', async () => {
+      const { proc, log } = fakeProcess()
+      const { port, send } = fakePort()
+      const stop = vi.fn(async () => {})
+      installProcessHandlers({ proc, log, describe: (e) => ({ message: String(e) }), stop, parentPort: port })
+      send({ type: 'stop' })
+      await settle()
+      expect(stop).toHaveBeenCalledTimes(1)
+      expect(proc.exit.mock.calls).toEqual([[0]])
+      expect(log.info).toHaveBeenCalledWith('Arrêt demandé', { signal: 'parent' })
+    })
+
+    it('un message inconnu du parent est ignoré', async () => {
+      const { proc, log } = fakeProcess()
+      const { port, send } = fakePort()
+      const stop = vi.fn(async () => {})
+      installProcessHandlers({ proc, log, describe: (e) => ({ message: String(e) }), stop, parentPort: port })
+      send({ type: 'x' })
+      send(null)
+      await settle()
+      expect(stop).not.toHaveBeenCalled()
+      expect(proc.exit).not.toHaveBeenCalled()
+    })
+
+    it('stop du parent puis SIGINT : un seul arrêt', async () => {
+      const { proc, log } = fakeProcess()
+      const { port, send } = fakePort()
+      const stop = vi.fn(async () => {})
+      installProcessHandlers({ proc, log, describe: (e) => ({ message: String(e) }), stop, parentPort: port })
+      send({ type: 'stop' })
+      proc.emit('SIGINT', 'SIGINT')
+      await settle()
+      expect(stop).toHaveBeenCalledTimes(1)
+      expect(proc.exit.mock.calls).toEqual([[0]])
+    })
+  })
 })
