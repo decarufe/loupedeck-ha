@@ -3,14 +3,17 @@ import { classifyPrecip, splitPrecip, type PrecipKind } from './precip.js'
 
 export interface GeoPoint { latitude: number; longitude: number }
 
-/** Une heure de météo : `t` = début de l'heure (ms), `mm` = précipitations en mm d'eau, `prob` = probabilité en % (ou null). */
+/**
+ * Une heure de météo. `t` = horodatage Open-Meteo (ms) : les précipitations et la probabilité couvrent l'heure PRÉCÉDENTE (`t − 1 h` → `t`),
+ * la température et le code météo sont instantanés à `t`. `mm` = précipitations en mm d'eau, `prob` = probabilité en % (ou null).
+ */
 export interface OutlookPoint { t: number; temp: number; feels: number; mm: number; kind: PrecipKind; prob: number | null }
 
 const ENDPOINT = 'https://api.open-meteo.com/v1/forecast'
 const HOURLY = 'temperature_2m,dew_point_2m,wind_speed_10m,precipitation,snowfall,precipitation_probability,weather_code'
-/** L'heure courante compte dans les heures « futures » : 5 heures couvrent donc jusqu'à maintenant + 4 h. */
+/** L'heure courante compte dans les heures « futures » et chaque valeur couvre l'heure précédente : 6 horodatages couvrent jusqu'à maintenant + 4 h. */
 const PAST_HOURS = 8
-const FORECAST_HOURS = 5
+const FORECAST_HOURS = 6
 const TIMEOUT_MS = 10_000
 
 /** Arrondi à 2 décimales (~1 km) : la position exacte de la maison ne quitte pas l'ordinateur. */

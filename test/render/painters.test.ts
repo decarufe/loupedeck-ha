@@ -224,7 +224,8 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     outlook: { points, start: NOW - 8 * HOUR, now: NOW, end: NOW + 4 * HOUR, stale: false, message: null, ...over },
   })
   const barX = (t: number) => 150 + ((t - (NOW - 8 * HOUR)) / (12 * HOUR)) * 270
-  const centerX = (t: number) => Math.round((barX(t) + barX(t + HOUR)) / 2)
+  /** Une valeur datée T couvre l'heure précédente : la barre va de T − 1 h à T. */
+  const centerX = (t: number) => Math.round((barX(t - HOUR) + barX(t)) / 2)
   const BOTTOM = 267 // 3 px au-dessus du bas de l'écran
 
   it('barre_de_pluie_passee_pleine_hauteur', async () => {
@@ -257,7 +258,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 2, kind: 'mix' })]))
     const seen = new Set<string>()
-    const x0 = Math.round(barX(t)) + 1
+    const x0 = Math.round(barX(t - HOUR)) + 1
     for (let x = x0; x < x0 + 20; x++) seen.add(px(s, x, BOTTOM).join(','))
     expect(seen.has(RAIN.join(','))).toBe(true)
     expect(seen.has(SNOW.join(','))).toBe(true)
@@ -281,6 +282,27 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     await paint(s, view([opt(t, { mm: 0.2, kind: 'rain' })]))
     expect(px(s, centerX(t), 268)).toEqual(RAIN)
     expect(px(s, centerX(t), 266)).toEqual(RAIN) // au moins 2 px
+  })
+
+  it('valeur_datee_maintenant_finit_au_trait_maintenant', async () => {
+    const s = createSurface()
+    await paint(s, view([opt(NOW, { mm: 2, kind: 'rain' })]))
+    expect(px(s, 320, BOTTOM)).toEqual(RAIN) // l'heure écoulée est à gauche du trait
+    expect(px(s, 340, BOTTOM)).toEqual([0, 0, 0]) // rien à droite
+  })
+
+  it('valeur_datee_dans_une_heure_commence_au_trait_maintenant', async () => {
+    const s = createSurface()
+    await paint(s, view([opt(NOW + HOUR, { mm: 2, kind: 'rain', prob: 100 })]))
+    expect(px(s, 320, BOTTOM)).toEqual([0, 0, 0]) // rien à gauche
+    expect(px(s, 340, BOTTOM)[2]).toBeGreaterThan(0) // la prévision commence à droite
+  })
+
+  it('heure_passee_sans_precipitation_mesuree_na_pas_de_barre', async () => {
+    const t = NOW - 2 * HOUR
+    const s = createSurface()
+    await paint(s, view([opt(t, { mm: 0, kind: 'rain', prob: 60 })]))
+    expect(px(s, centerX(t), 269)).toEqual([0, 0, 0]) // même pas la barre minimale de 2 px
   })
 
   it('le_maximum_grandit_au_dela_de_2_mm', async () => {

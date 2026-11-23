@@ -30,6 +30,11 @@ describe('classement des précipitations', () => {
     expect(classifyPrecip({ ...base, probability: 60, weatherCode: 66 })).toBe('mix')
   })
 
+  it('code_pluie_sous_zero_sans_quantite_donne_melange', () => {
+    expect(classifyPrecip({ ...base, tempC: -3, probability: 60, weatherCode: 61 })).toBe('mix')
+    expect(classifyPrecip({ ...base, tempC: -3, probability: 60, weatherCode: 73 })).toBe('snow')
+  })
+
   it('aucune_quand_quantite_nulle_et_probabilite_faible_ou_absente', () => {
     expect(classifyPrecip({ ...base, probability: 20, weatherCode: 61 })).toBe('none')
     expect(classifyPrecip({ ...base, probability: null, weatherCode: 61 })).toBe('none')

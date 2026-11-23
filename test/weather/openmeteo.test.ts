@@ -13,7 +13,7 @@ describe('client Open-Meteo', () => {
     expect(url).toMatch(/latitude=-?\d+(\.\d{1,2})?&/)
     expect(url).toMatch(/longitude=-?\d+(\.\d{1,2})?&/)
     expect(url).toContain('past_hours=8')
-    expect(url).toContain('forecast_hours=5')
+    expect(url).toContain('forecast_hours=6')
     expect(url).toContain('timezone=UTC')
     expect(decodeURIComponent(url)).toContain('hourly=temperature_2m,dew_point_2m,wind_speed_10m,precipitation,snowfall,precipitation_probability,weather_code')
   })

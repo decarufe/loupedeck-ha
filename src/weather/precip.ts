@@ -19,7 +19,7 @@ export function classifyPrecip(i: { rainMm: number; snowMm: number; tempC: numbe
     if (i.probability === null || i.probability < MIN_PROBABILITY) return 'none'
     if (SNOW_CODES.has(i.weatherCode)) return 'snow'
     if (FREEZING_CODES.has(i.weatherCode)) return 'mix'
-    return 'rain'
+    return i.tempC <= 0 ? 'mix' : 'rain'
   }
   if (i.rainMm / total >= MIX_SHARE && i.snowMm / total >= MIX_SHARE) return 'mix'
   if (i.snowMm > i.rainMm) return 'snow'

@@ -58,6 +58,7 @@ L'utilisateur a choisi **A**.
 
 **Source des données**
 - Service Open-Meteo : température, point de rosée, vent, précipitations (pluie et neige séparées), probabilité de précipitation, sur −8 h à +4 h.
+- Chaque valeur de précipitation (et la probabilité) datée `T` couvre l'**heure précédente** (`T − 1 h` → `T`) ; la température et le code météo sont instantanés. La barre d'une valeur datée `T` va donc de `T − 1 h` à `T`, et 6 horodatages futurs (`forecast_hours=6`) couvrent jusqu'à maintenant + 4 h.
 - Mise à jour toutes les 15 min.
 - La position est celle de la **maison dans Home Assistant**, arrondie à environ 1 km avant l'envoi.
 - Hors ligne ou service en erreur : les boutons gardent la dernière courbe reçue, en grisé.

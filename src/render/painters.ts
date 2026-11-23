@@ -384,7 +384,7 @@ function paintOutlookLines(ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number)
   const span = Math.max(hi - lo, 2)
   const floor = (lo + hi) / 2 - span / 2
   const y = (v: number) => yBottom - ((v - floor) / span) * (yBottom - yTop)
-  const px = (p: { t: number }) => x(p.t + OUTLOOK_HOUR_MS / 2)
+  const px = (p: { t: number }) => x(p.t)
 
   ctx.globalAlpha = alpha * 0.25
   ctx.fillStyle = FEELS_COLOR
@@ -413,10 +413,12 @@ function paintOutlookBars(
   for (const p of o.points) {
     if (p.kind === 'none') continue
     const future = p.t > o.now
+    if (!future && p.mm <= 0) continue // heure écoulée : on ne dessine que ce qui est vraiment tombé
     const share = future && p.prob !== null ? p.prob / 100 : p.mm / scale
     const h = Math.max(2, Math.min(1, share) * maxH)
-    const x1 = x(p.t) + 1
-    const w = x(p.t + OUTLOOK_HOUR_MS) - 1 - x1
+    // La valeur datée T couvre l'heure précédente : la barre va de T − 1 h à T.
+    const x1 = x(p.t - OUTLOOK_HOUR_MS) + 1
+    const w = x(p.t) - 1 - x1
     ctx.save()
     ctx.globalAlpha = alpha * (future ? 0.45 : 1)
     ctx.beginPath()
