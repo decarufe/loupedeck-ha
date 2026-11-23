@@ -271,7 +271,7 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
   /**
    * Remplace tous les réglages par ceux d'un fichier. Le jeton n'en vient jamais : celui en place est gardé, sauf si
    * l'adresse Home Assistant change (il partirait vers un autre serveur) ; il faut alors le saisir à nouveau.
-   * Le jeton gardé ne perd pas non plus la vérification du certificat : le fichier ne peut que la durcir.
+   * Un import n'active jamais « Accepter un certificat auto-signé » : il peut seulement le garder pour la même adresse.
    */
   app.post('/api/config/import', async (req, reply) => {
     if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
@@ -282,7 +282,7 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     const current = d.store.get()
     const sameHome = normUrl(file.ha.url) === normUrl(current.ha.url)
     const token = sameHome ? current.ha.token : ''
-    const tlsKept = token !== '' && file.ha.allowSelfSigned === true && !current.ha.allowSelfSigned
+    const tlsKept = file.ha.allowSelfSigned === true && !(sameHome && current.ha.allowSelfSigned)
     const parsed = appConfigSchema.safeParse({
       ...file.rest,
       // Port de la console : celui de ce PC, jamais celui du fichier.

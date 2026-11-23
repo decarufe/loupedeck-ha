@@ -60,7 +60,7 @@ export const forceConsole = (includeAgent: boolean) =>
 export const EXPORT_URL = '/api/config/export'
 /**
  * Remplace tous les réglages par ceux d'un fichier. `tokenRequired` : aucun jeton pour l'adresse importée ;
- * `tlsKept` : le fichier acceptait un certificat auto-signé, pas les réglages en place, qui sont gardés.
+ * `tlsKept` : le fichier acceptait un certificat auto-signé, ce qu'un import n'active jamais.
  */
 export const importConfig = (file: unknown) =>
   request<{ config: PublicConfig; tokenRequired: boolean; tlsKept: boolean }>('/api/config/import', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify(file) })

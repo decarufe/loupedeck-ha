@@ -80,7 +80,8 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
 - Raccourcis : **Ctrl+Z** annule, **Échap** désélectionne, **Suppr** retire la touche sélectionnée.
 - **Sauvegarde** (dans Réglages) : **Exporter les réglages** télécharge un fichier avec tous les réglages sauf le
   jeton et le port de la console (`device.path`, propre au PC) ; **Importer des réglages…** les remplace tous. Le
-  jeton en place est gardé si l'adresse Home Assistant est la même, sinon il faut le saisir à nouveau.
+  jeton en place est gardé si l'adresse Home Assistant est la même, sinon il faut le saisir à nouveau. Un import
+  n'active jamais « Accepter un certificat auto-signé » : cochez-le vous-même au besoin.
 - **Annuler** revient à la configuration précédente. Chaque modification est enregistrée et appliquée à la
   console aussitôt ; l'aperçu suit la console en direct.
 

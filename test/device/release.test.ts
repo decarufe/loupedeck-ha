@@ -68,7 +68,8 @@ describe('forcer la connexion', () => {
   it('closes_the_holder_then_connects_at_once', async () => {
     const { releaser, runs, link } = setup(['explorer.exe', 'LogiPluginService.exe', 'logioptionsplus_agent.exe'])
     expect(await releaser.force()).toEqual({ connected: true, reason: null, killed: ['LogiPluginService.exe'], failed: [], agentRunning: true })
-    expect(runs.filter(([c]) => /taskkill/.test(c!))).toEqual([['C:\\Windows\\System32\\taskkill.exe', '/F', '/T', '/IM', 'LogiPluginService.exe']])
+    // Jamais /T : il fermerait aussi les applications lancées depuis une touche Loupedeck.
+    expect(runs.filter(([c]) => /taskkill/.test(c!))).toEqual([['C:\\Windows\\System32\\taskkill.exe', '/F', '/IM', 'LogiPluginService.exe']])
     expect(link.retryNow).toHaveBeenCalled()
   })
 

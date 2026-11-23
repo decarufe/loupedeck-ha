@@ -106,8 +106,9 @@ export function createConsoleReleaser(d: ConsoleReleaserDeps): ConsoleReleaser {
       if (names.length === 0 && round > 0) break
       failed.clear()
       for (const name of names) {
-        const { code } = await d.run(system('taskkill.exe'), ['/F', '/T', '/IM', name])
-        // 128 : déjà parti, par exemple fermé avec son parent (/T).
+        // Sans /T : il fermerait aussi les applications que ce logiciel a lancées (action « ouvrir » d'une touche).
+        const { code } = await d.run(system('taskkill.exe'), ['/F', '/IM', name])
+        // 128 : déjà parti, par exemple arrêté avec le service qui l'avait lancé.
         if (code === 0) killed.add(name)
         else if (code !== 128) failed.add(name)
       }

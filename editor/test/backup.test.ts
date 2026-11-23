@@ -56,6 +56,17 @@ describe('export et import des réglages', () => {
     expect(w.find('input.ha-url').exists()).toBe(true)
   })
 
+  it('import_shows_the_real_host_of_a_misleading_address', async () => {
+    mockFetch()
+    const w = await mountEditor()
+    const config = publicConfig()
+    config.ha = { url: 'https://hass.maison.example@ailleurs.example/', allowSelfSigned: false, hasToken: false }
+    vi.stubGlobal('fetch', vi.fn(async () => json({ config, tokenRequired: true, tlsKept: true })))
+    await pick(w, '{}')
+    expect(state.notice).toContain('L’adresse Home Assistant est https://ailleurs.example :')
+    expect(state.notice).toContain('certificat auto-signé')
+  })
+
   it('import_says_when_the_certificate_setting_was_not_applied', async () => {
     mockFetch()
     const w = await mountEditor()

@@ -236,7 +236,7 @@ describe('serveur de l’éditeur', () => {
       expect(store.get().ha.token).toBe('SECRET123')
     })
 
-    it('import_never_weakens_tls_for_the_saved_token', async () => {
+    it('import_never_turns_certificate_checks_off', async () => {
       await start()
       const file = await exported()
       file.config.ha.allowSelfSigned = true
@@ -248,9 +248,10 @@ describe('serveur de l’éditeur', () => {
       expect((await importFile(file)).json()).toMatchObject({ tlsKept: false, config: { ha: { allowSelfSigned: true } } })
       file.config.ha.allowSelfSigned = false
       expect((await importFile(file)).json()).toMatchObject({ tlsKept: false, config: { ha: { allowSelfSigned: false } } })
-      // Nouvelle adresse : aucun jeton n'est en jeu, le réglage du fichier s'applique.
+      // Nouvelle adresse : un jeton va y être saisi, la case reste à cocher par l'utilisateur.
       file.config.ha = { url: 'https://ailleurs.example', allowSelfSigned: true }
-      expect((await importFile(file)).json()).toMatchObject({ tokenRequired: true, tlsKept: false, config: { ha: { allowSelfSigned: true } } })
+      await store.update(relaxed)
+      expect((await importFile(file)).json()).toMatchObject({ tokenRequired: true, tlsKept: true, config: { ha: { allowSelfSigned: false } } })
     })
 
     it('import_keeps_the_port_of_this_computer', async () => {

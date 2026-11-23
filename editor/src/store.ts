@@ -471,6 +471,11 @@ export function undo(): Promise<void> {
   })
 }
 
+/** Adresse sans rien qui puisse tromper sur le serveur réel (« https://connu@autre »). */
+function shownAddress(url: string): string {
+  try { return new URL(url).origin } catch { return url }
+}
+
 /** Importe un fichier de réglages (tout sauf le jeton). */
 export function importSettings(text: string): Promise<boolean> {
   return enqueue(async () => {
@@ -486,9 +491,10 @@ export function importSettings(text: string): Promise<boolean> {
       state.error = null
       state.selectedSlot = null
       state.previewVersion++
+      const tls = r.tlsKept ? ' « Accepter un certificat auto-signé » n’a pas été repris : cochez-le si vous en avez besoin.' : ''
       state.notice = r.tokenRequired
-        ? `Réglages importés. L’adresse Home Assistant est ${r.config.ha.url} : saisissez son jeton seulement si vous la reconnaissez.`
-        : `Réglages importés. « Annuler » revient aux réglages précédents.${r.tlsKept ? ' « Accepter un certificat auto-signé » n’a pas été repris : cochez-le si vous en avez besoin.' : ''}`
+        ? `Réglages importés. L’adresse Home Assistant est ${shownAddress(r.config.ha.url)} : saisissez son jeton seulement si vous la reconnaissez.${tls}`
+        : `Réglages importés. « Annuler » revient aux réglages précédents.${tls}`
       return true
     } catch (e) {
       fail(e)
