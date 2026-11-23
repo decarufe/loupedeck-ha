@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest'
+import type { CameraDashboard } from '../../src/config/schema.js'
 import { appConfigSchema, arrangeOrder, defaultConfig, emptyDashboard, isEmptyPage, migrateConfig, moveItem } from '../../src/config/schema.js'
 
 const parse = (v: unknown) => appConfigSchema.safeParse(v)
 
 describe('schéma de configuration', () => {
+  describe('tableau Caméra : alerte', () => {
+    it('camera_alert_defaults_for_old_config', () => {
+      const old = JSON.parse(JSON.stringify(defaultConfig()))
+      for (const b of old.buttons) if (b?.type === 'camera') delete b.alert
+      const r = parse(old)
+      expect(r.success && (r.data.buttons[3] as CameraDashboard).alert).toEqual({ enabled: false, sensors: [] })
+    })
+
+    it('camera_alert_kept_and_validated', () => {
+      const c = defaultConfig()
+      ;(c.buttons[3] as CameraDashboard).alert = { enabled: true, sensors: ['binary_sensor.a'] }
+      const r = parse(c)
+      expect(r.success && (r.data.buttons[3] as CameraDashboard).alert).toEqual({ enabled: true, sensors: ['binary_sensor.a'] })
+      ;(c.buttons[3] as CameraDashboard).alert.sensors = ['']
+      expect(parse(c).success).toBe(false)
+    })
+  })
+
   describe('tableau Caméra : cadrage', () => {
     it('camera_fit_defaults_to_cover_for_old_config', () => {
       const old = JSON.parse(JSON.stringify(defaultConfig()))

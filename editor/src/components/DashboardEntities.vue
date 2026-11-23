@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { GRAPH_WINDOWS_H, type CameraFit } from '@shared/config/schema'
 import { pageCommand, save, state } from '../store'
 import DraftInput from './DraftInput.vue'
+import CameraAlert from './CameraAlert.vue'
 import EntityPicker from './EntityPicker.vue'
 
 const MAX_SENSORS = 4
@@ -25,7 +26,11 @@ function setEntity(entityId: string | null) {
   const i = index.value
   void save((cfg) => {
     const b = cfg.buttons[i]
-    if (b && b.type !== 'custom') b.entityId = entityId
+    if (b && b.type !== 'custom') {
+      // Les capteurs d'alerte sont ceux de l'ancienne caméra : on repart de zéro.
+      if (b.type === 'camera' && b.entityId !== entityId) b.alert = { enabled: false, sensors: [] }
+      b.entityId = entityId
+    }
   })
 }
 
@@ -126,6 +131,7 @@ function removeSensor(n: number) {
         </select>
       </label>
     </template>
+    <CameraAlert v-if="camera" :index="index" />
     <template v-if="camera && camera.entityId">
       <div class="commands">
         <button type="button" class="camera-refresh" @click="pageCommand(index, 'refresh')">↻ Forcer une image</button>

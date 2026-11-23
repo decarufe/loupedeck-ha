@@ -5,7 +5,7 @@ import path from 'node:path'
 import { setTimeout as realSleep } from 'node:timers/promises'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type App, type AppDeps } from '../src/app.js'
-import { defaultConfig, emptyDashboard, type AppConfig, type CustomDashboard } from '../src/config/schema.js'
+import { defaultConfig, emptyDashboard, type AppConfig, type CameraDashboard, type CustomDashboard } from '../src/config/schema.js'
 import type { HaPort } from '../src/ha/types.js'
 import { FakeDevice } from './fakes/fake-device.js'
 import { FakeHa } from './fakes/fake-ha.js'
@@ -87,6 +87,24 @@ describe('createApp', () => {
     await settle()
     expect(has[0]!.calls).toContainEqual({ domain: 'light', service: 'toggle', data: undefined, target: { entity_id: 'light.salon' } })
     expect(devices[0]!.callsOf('vibrate').map((c) => c.args[0])).toContain(0x01)
+  })
+
+  it('camera_alert_end_to_end', async () => {
+    const a = await start()
+    has[0]!.setEntity('binary_sensor.porte', 'off')
+    await a.store.update(withChange(a, (c) => {
+      const cam = c.buttons[3] as CameraDashboard
+      cam.entityId = 'camera.porte'
+      cam.alert = { enabled: true, sensors: ['binary_sensor.porte'] }
+    }))
+    await settle()
+    expect(a.navigator.activeIndex()).toBe(0)
+    has[0]!.setEntity('binary_sensor.porte', 'on')
+    await settle()
+    expect(a.navigator.activeIndex()).toBe(3)
+    expect(devices[0]!.callsOf('vibrate').map((c) => c.args[0])).toContain(0x6a)
+    const state = JSON.parse(await fs.readFile(path.join(dir, 'state.json'), 'utf8').catch(() => '{}'))
+    expect(state.activeButton ?? 0).toBe(0)
   })
 
   it('config_change_rebuilds_navigator', async () => {

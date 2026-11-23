@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeHa } from './fakes/fake-ha.js'
 import { Actions } from '../src/ha/actions.js'
 import { dim, Navigator, type DevicePort } from '../src/navigator.js'
-import { defaultConfig, type DashboardConfig } from '../src/config/schema.js'
+import { defaultConfig, type CameraDashboard, type DashboardConfig } from '../src/config/schema.js'
 import type { Dashboard } from '../src/dashboards/types.js'
 import type { InputEvent } from '../src/device/input.js'
 import type { View } from '../src/views.js'
@@ -16,6 +16,7 @@ vi.mock('../src/render/painters.js', async (orig) => {
 class FakeDevice implements DevicePort {
   present = vi.fn()
   setLed = vi.fn()
+  vibrate = vi.fn()
   private inputs = new Set<(e: InputEvent) => void>()
   private statuses = new Set<(s: 'connected' | 'disconnected') => void>()
   onInput(cb: (e: InputEvent) => void) { this.inputs.add(cb); return () => { this.inputs.delete(cb) } }
@@ -25,7 +26,7 @@ class FakeDevice implements DevicePort {
   listeners() { return this.inputs.size + this.statuses.size }
 }
 
-interface Fake extends Dashboard { index: number; activate: ReturnType<typeof vi.fn>; deactivate: ReturnType<typeof vi.fn>; handle: ReturnType<typeof vi.fn>; stale: boolean }
+interface Fake extends Dashboard { index: number; prepareAlert: ReturnType<typeof vi.fn>; activate: ReturnType<typeof vi.fn>; deactivate: ReturnType<typeof vi.fn>; handle: ReturnType<typeof vi.fn>; stale: boolean }
 
 const flush = () => new Promise<void>(r => setImmediate(r))
 const settle = async () => { await flush(); await flush(); await flush() }
@@ -45,7 +46,7 @@ describe('Navigator', () => {
       view: () => (cfg.type === 'camera' && f.stale
         ? { kind: 'full', image: null, message: null, stale: true, offline: false }
         : { kind: 'grid', keys: [], left: [], right: [], offline: false }) as unknown as View,
-      handle: vi.fn(), activate: vi.fn(), deactivate: vi.fn(),
+      handle: vi.fn(), activate: vi.fn(), deactivate: vi.fn(), prepareAlert: vi.fn(),
     }
     made.push(f)
     return f
@@ -285,5 +286,144 @@ describe('Navigator', () => {
     expect(device.present).not.toHaveBeenCalled()
     expect(device.setLed).not.toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(0)
+  })
+  describe('alertes de caméra', () => {
+    const S3 = 'binary_sensor.cam_a_person'
+    const S4 = 'binary_sensor.cam_b_person'
+    const alertConfig = (over: { enabled?: boolean } = {}) => {
+      const c = defaultConfig()
+      const a = c.buttons[3] as CameraDashboard
+      const b = c.buttons[4] as CameraDashboard
+      a.entityId = 'camera.a'; a.alert = { enabled: over.enabled ?? true, sensors: [S3] }
+      b.entityId = 'camera.b'; b.alert = { enabled: over.enabled ?? true, sensors: [S4] }
+      return c
+    }
+    const adv = (ms: number) => vi.advanceTimersByTimeAsync(ms)
+    const fire = (id: string) => { ha.setEntity(id, 'off'); ha.setEntity(id, 'on') }
+    const clear = (id: string) => ha.setEntity(id, 'off')
+    const press = (i: number) => device.emit({ type: 'button', id: i })
+    const turn = () => device.emit({ type: 'knobTurn', knob: 'knobTL', delta: 1 })
+    const ledsOf = (i: number) => device.setLed.mock.calls.filter((c) => c[0] === i).map((c) => c[1])
+    const lastLed = (i: number) => ledsOf(i).at(-1)
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      nav.dispose()
+      ha.setEntity(S3, 'off'); ha.setEntity(S4, 'off')
+      nav = create()
+      nav.applyConfig(alertConfig())
+    })
+
+    it('alert_opens_vibrates_without_persisting', () => {
+      fire(S3)
+      expect(nav.activeIndex()).toBe(3)
+      expect(device.vibrate.mock.calls).toEqual([['alert']])
+      expect(setActive).not.toHaveBeenCalled()
+    })
+    it('alert_calls_prepare_before_activate', () => {
+      fire(S3)
+      expect(made[3].prepareAlert.mock.invocationCallOrder[0]).toBeLessThan(made[3].activate.mock.invocationCallOrder.at(-1)!)
+    })
+    it('returns_home_after_calm', async () => {
+      fire(S3); clear(S3); await adv(30_000)
+      expect(nav.activeIndex()).toBe(0)
+      expect(lastLed(3)).toBe('#FF00FF')
+    })
+    it('no_opening_within_5s_of_a_gesture', async () => {
+      turn(); await adv(4_999); fire(S3)
+      expect(nav.activeIndex()).toBe(0)
+      expect(device.vibrate).toHaveBeenCalledTimes(1)
+      await adv(60_000)
+      expect(nav.activeIndex()).toBe(0)
+    })
+    it('opens_5s_after_a_gesture', async () => {
+      turn(); await adv(5_000); fire(S3)
+      expect(nav.activeIndex()).toBe(3)
+    })
+    it('already_displayed_page_never_returns', async () => {
+      press(3); await adv(5_000); fire(S3); clear(S3); await adv(30_000)
+      expect(nav.activeIndex()).toBe(3)
+    })
+    it('latest_alert_takes_the_screen_then_home', async () => {
+      fire(S3); fire(S4)
+      expect(nav.activeIndex()).toBe(4)
+      clear(S4); await adv(30_000)
+      expect(nav.activeIndex()).toBe(0)
+    })
+    it('end_of_hidden_alert_keeps_screen', async () => {
+      fire(S3); fire(S4); clear(S3); await adv(30_000)
+      expect(nav.activeIndex()).toBe(4)
+    })
+    it('gesture_marks_seen_and_returns_after_5min', async () => {
+      fire(S3); turn(); clear(S3); await adv(200_000)
+      expect(nav.activeIndex()).toBe(3)
+      turn(); await adv(299_999)
+      expect(nav.activeIndex()).toBe(3)
+      await adv(1)
+      expect(nav.activeIndex()).toBe(0)
+      expect(lastLed(3)).not.toBe('#FF00FF')
+    })
+    it('own_button_keeps_the_camera', async () => {
+      fire(S3); press(3)
+      expect(setActive).toHaveBeenCalledWith(3)
+      await adv(600_000)
+      expect(nav.activeIndex()).toBe(3)
+    })
+    it('other_button_wins_and_marks_seen', async () => {
+      fire(S3); press(2)
+      expect(nav.activeIndex()).toBe(2)
+      await adv(600_000)
+      expect(nav.activeIndex()).toBe(2)
+      expect(lastLed(3)).not.toBe('#FF00FF')
+    })
+    it('gesture_on_another_page_does_not_mark_seen', async () => {
+      turn(); fire(S3); turn(); clear(S3); await adv(30_000)
+      expect(lastLed(3)).toBe('#FF00FF')
+    })
+    it('button_clears_the_reminder', async () => {
+      fire(S3); clear(S3); await adv(30_000)
+      press(3)
+      expect(lastLed(3)).not.toBe('#FF00FF')
+    })
+    it('blinks_every_250ms', async () => {
+      fire(S3); device.setLed.mockClear(); await adv(500)
+      expect(ledsOf(3)).toEqual(['#000000', '#FF00FF'])
+    })
+    it('alert_hides_stale_red', async () => {
+      made[3].stale = true; fire(S3); await adv(3_000)
+      expect(ledsOf(3)).not.toContain('#FF0000')
+    })
+    it('reconnect_restores_alert_led', () => {
+      turn(); fire(S3); device.setLed.mockClear(); device.status('connected')
+      expect(ledsOf(3)[0]).toMatch(/^#(FF00FF|000000)$/)
+    })
+    it('config_change_ends_alerts_and_goes_home', async () => {
+      fire(S3); nav.applyConfig(alertConfig())
+      expect(nav.activeIndex()).toBe(0)
+      await adv(600_000)
+      expect(lastLed(3)).not.toBe('#FF00FF')
+    })
+    it('disabled_alert_does_nothing', () => {
+      nav.applyConfig(alertConfig({ enabled: false })); fire(S3)
+      expect(nav.activeIndex()).toBe(0)
+      expect(device.vibrate).not.toHaveBeenCalled()
+    })
+    it('ha_offline_ends_the_alert_after_calm', async () => {
+      fire(S3)
+      ha.setStatus({ state: 'offline', reason: 'network' })
+      await adv(30_000)
+      expect(nav.activeIndex()).toBe(0)
+    })
+    it('button_press_on_guarded_alert_hides_the_old_image', () => {
+      turn(); fire(S3)
+      expect(nav.activeIndex()).toBe(0)
+      press(3)
+      expect(nav.activeIndex()).toBe(3)
+      expect(made[3].prepareAlert).toHaveBeenCalledTimes(1)
+    })
+    it('dispose_during_alert_leaves_no_timers', () => {
+      fire(S3); nav.dispose()
+      expect(vi.getTimerCount()).toBe(0)
+    })
   })
 })

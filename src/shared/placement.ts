@@ -7,6 +7,8 @@ export interface EntityInfo {
   dimmable: boolean
   deviceClass: string | null
   icon: string | null
+  /** Appareil Home Assistant de l'entité (registre), s'il en a un. */
+  deviceId?: string | null
   /** Unité de mesure (`unit_of_measurement`), si l'entité en a une. */
   unit?: string | null
 }
@@ -15,7 +17,7 @@ export interface EntityInfo {
  * `key` = ancienne touche Lumières (équivaut à `toggle`). Les types de touche d'une page Bouton custom
  * (`toggle`, `action`, `state`, `value`, `graph`, `dimmer`) et l'entité d'une page (`climate`, `weather`, `camera`, `graph`).
  */
-export type SlotKind = 'key' | 'toggle' | 'action' | 'state' | 'value' | 'graph' | 'dimmer' | 'climate' | 'sensor' | 'weather' | 'camera'
+export type SlotKind = 'key' | 'toggle' | 'action' | 'state' | 'value' | 'graph' | 'dimmer' | 'climate' | 'sensor' | 'weather' | 'camera' | 'alert'
 
 /** Un capteur est numérique s'il a une unité ou si son état se lit comme un nombre. */
 export function isNumeric(e: EntityInfo): boolean {
@@ -55,6 +57,8 @@ export function canPlace(kind: SlotKind, e: EntityInfo): { ok: true } | { ok: fa
       return e.domain === 'sensor' && e.deviceClass === 'temperature' ? ok : no('Seuls les capteurs de température sont acceptés ici.')
     case 'weather':
       return e.domain === 'weather' ? ok : no('Ce tableau accepte seulement une entité météo.')
+    case 'alert':
+      return e.domain === 'binary_sensor' ? ok : no('Une alerte accepte seulement un capteur tout ou rien (binary_sensor).')
     case 'camera':
       return e.domain === 'camera' ? ok : no('Ce tableau accepte seulement une caméra.')
   }

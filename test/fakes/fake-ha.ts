@@ -87,6 +87,7 @@ export class FakeHa implements HaPort {
       deviceClass: e.attributes.device_class ?? null,
       icon: e.attributes.icon ?? null,
       unit: e.attributes.unit_of_measurement ?? null,
+      deviceId: e.attributes.device_id ?? null,
     })))
   }
 

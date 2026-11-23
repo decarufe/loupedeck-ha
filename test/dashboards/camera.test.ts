@@ -7,7 +7,7 @@ import type { FullView } from '../../src/views.js'
 import type { CameraDashboard } from '../../src/config/schema.js'
 
 function cfg(over: Partial<CameraDashboard> = {}): CameraDashboard {
-  return { type: 'camera', name: 'Porte', color: '#FF8800', entityId: 'camera.porte', source: 'ha-proxy', intervalMs: 1000, fit: 'cover', ...over }
+  return { type: 'camera', name: 'Porte', color: '#FF8800', entityId: 'camera.porte', source: 'ha-proxy', intervalMs: 1000, fit: 'cover', alert: { enabled: false, sensors: [] }, ...over }
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 const img = (n: number) => Buffer.from([n])
@@ -52,6 +52,32 @@ describe('tableau Caméra', () => {
 
   const make = (src: CameraSource, c = cfg()) => createCameraDashboard(c, { ha, actions, requestRender: render, createSource: () => src })
   const fv = (d: ReturnType<typeof make>) => d.view() as FullView
+
+  it('alert_hides_the_old_image_until_a_new_one', async () => {
+    const d = make(probe({ delay: 500 }))
+    d.activate(); await vi.advanceTimersByTimeAsync(500); d.deactivate()
+    expect(fv(d).image).not.toBeNull()
+    d.prepareAlert!(); d.activate()
+    expect(fv(d)).toMatchObject({ image: null, message: 'Chargement…', stale: false })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(fv(d).message).toBeNull()
+    expect(fv(d).image).not.toBeNull()
+    d.deactivate()
+  })
+
+  it('alert_with_unreachable_camera_says_so', async () => {
+    const d = make(probe({ fail: () => true }))
+    d.prepareAlert!(); d.activate(); await flush()
+    expect(fv(d).message).toBe('Image non disponible')
+    d.deactivate()
+  })
+
+  it('normal_opening_keeps_the_last_image', async () => {
+    const d = make(probe())
+    d.activate(); await flush(); d.deactivate(); d.activate()
+    expect(fv(d).image).not.toBeNull()
+    d.deactivate()
+  })
 
   it('view_carries_fit', () => {
     expect(fv(make(probe())).fit).toBe('cover')

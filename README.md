@@ -80,6 +80,10 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
   (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires). Sur la
   console, la tuile haut gauche compte le temps depuis la dernière image (vert, ambre après 10 s, rouge
   après 30 s) ; appui court : forcer une image, appui long : recharger l'intégration de la caméra.
+  **Alerte** : quand un capteur coché détecte quelque chose, la console vibre, le bouton clignote en
+  magenta et la caméra s'ouvre. L'écran revient seul après 30 s sans détection (5 minutes sans geste si
+  vous avez touché la console) ; un bouton magenta fixe signale une alerte non vue. Rien ne s'ouvre dans
+  les 5 s qui suivent un geste.
 - **Mode Essayer** (en haut) : toucher les touches et tourner les molettes de la Live virtuelle pilote la vraie
   maison, comme la console. En mode **Éditer**, cliquer règle et glisser place.
 - Raccourcis : **Ctrl+Z** annule, **Échap** désélectionne, **Suppr** retire la touche sélectionnée.
