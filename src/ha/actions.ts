@@ -90,6 +90,28 @@ export class Actions {
     })(value)
   }
 
+  /** Lance une scène ou un script (`turn_on`). */
+  run(entityId: string): void {
+    if (!this.guard()) return
+    this.send(entityId.split('.')[0]!, 'turn_on', undefined, entityId)
+  }
+
+  /** Recharge l'intégration (entrée de configuration) d'où vient l'entité. */
+  reloadIntegration(entityId: string): Promise<void> {
+    if (!this.guard()) return Promise.reject(new Error('Home Assistant hors ligne'))
+    this.feedback('ok')
+    return this.ha.callService('homeassistant', 'reload_config_entry', undefined, { entity_id: entityId }).catch((err) => {
+      this.feedback('error')
+      throw err
+    })
+  }
+
+  /** Demande à Home Assistant de relire l'entité tout de suite (`homeassistant.update_entity`). */
+  updateEntity(entityId: string): Promise<void> {
+    if (!this.guard()) return Promise.reject(new Error('Home Assistant hors ligne'))
+    return this.ha.callService('homeassistant', 'update_entity', undefined, { entity_id: entityId })
+  }
+
   setHvacMode(entityId: string, mode: string): void {
     if (!this.guard()) return
     this.send('climate', 'set_hvac_mode', { hvac_mode: mode }, entityId)

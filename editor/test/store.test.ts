@@ -13,7 +13,7 @@ const drop = (id: string) => ({ dataTransfer: { getData: (t: string) => (t === '
 function withSlot2() {
   const cfg = publicConfig()
   const b = cfg.buttons[0]
-  if (b?.type === 'lights') b.keys[2] = { entityId: 'light.salon' }
+  if (b?.type === 'custom') b.keys[2] = { kind: 'toggle', entityId: 'light.salon' }
   return cfg
 }
 
@@ -34,15 +34,15 @@ describe('file des sauvegardes', () => {
     // Attendre la réponse du second PUT.
     await vi.waitFor(() => {
       const b = state.config!.buttons[0]
-      expect(b?.type === 'lights' && b.keys[5]).toBeTruthy()
+      expect(b?.type === 'custom' && b.keys[5]).toBeTruthy()
     }, { timeout: 2000, interval: 5 })
     const last = m.puts()[1]!.body.buttons[0]
-    expect(last.keys[2]).toEqual({ entityId: 'light.salon', label: 'Lampe' })
-    expect(last.keys[5]).toEqual({ entityId: 'light.cuisine' })
+    expect(last.keys[2]).toEqual({ kind: 'toggle', entityId: 'light.salon', label: 'Lampe' })
+    expect(last.keys[5]).toEqual({ kind: 'toggle', entityId: 'light.cuisine' })
     expect(m.maxPutsInFlight()).toBe(1)
     const b = state.config!.buttons[0]
-    expect(b?.type === 'lights' && b.keys[2]).toEqual({ entityId: 'light.salon', label: 'Lampe' })
-    expect(b?.type === 'lights' && b.keys[5]).toEqual({ entityId: 'light.cuisine' })
+    expect(b?.type === 'custom' && b.keys[2]).toEqual({ kind: 'toggle', entityId: 'light.salon', label: 'Lampe' })
+    expect(b?.type === 'custom' && b.keys[5]).toEqual({ kind: 'toggle', entityId: 'light.cuisine' })
   })
 
   it('mutators_apply_to_the_latest_config_one_put_at_a_time', async () => {
@@ -59,8 +59,8 @@ describe('file des sauvegardes', () => {
     expect(m.maxPutsInFlight()).toBe(1)
     const last = m.puts()[2]!.body.buttons[0]
     expect(last.name).toBe('Pièces')
-    expect(last.keys[2]).toEqual({ entityId: 'light.salon', label: 'Lampe' })
-    expect(last.keys[7]).toEqual({ entityId: 'light.cuisine' })
+    expect(last.keys[2]).toEqual({ kind: 'toggle', entityId: 'light.salon', label: 'Lampe' })
+    expect(last.keys[7]).toEqual({ kind: 'toggle', entityId: 'light.cuisine' })
   })
 
   it('a_failed_save_does_not_block_the_queue', async () => {

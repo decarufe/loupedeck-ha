@@ -7,9 +7,20 @@ export interface EntityInfo {
   dimmable: boolean
   deviceClass: string | null
   icon: string | null
+  /** Unité de mesure (`unit_of_measurement`), si l'entité en a une. */
+  unit?: string | null
 }
 
-export type SlotKind = 'key' | 'dimmer' | 'climate' | 'sensor' | 'weather' | 'camera'
+/**
+ * `key` = ancienne touche Lumières (équivaut à `toggle`). Les types de touche d'une page Bouton custom
+ * (`toggle`, `action`, `state`, `value`, `graph`, `dimmer`) et l'entité d'une page (`climate`, `weather`, `camera`, `graph`).
+ */
+export type SlotKind = 'key' | 'toggle' | 'action' | 'state' | 'value' | 'graph' | 'dimmer' | 'climate' | 'sensor' | 'weather' | 'camera'
+
+/** Un capteur est numérique s'il a une unité ou si son état se lit comme un nombre. */
+export function isNumeric(e: EntityInfo): boolean {
+  return e.domain === 'sensor' && ((e.unit ?? null) !== null || Number.isFinite(Number.parseFloat(e.state)))
+}
 
 /** Une lumière est gradable si un de ses modes de couleur dépasse on/off, ou si elle expose une luminosité numérique. */
 export function isDimmable(attributes: Record<string, unknown>): boolean {
@@ -25,7 +36,16 @@ export function canPlace(kind: SlotKind, e: EntityInfo): { ok: true } | { ok: fa
   const no = (reason: string) => ({ ok: false, reason }) as const
   switch (kind) {
     case 'key':
-      return e.domain === 'light' || e.domain === 'switch' ? ok : no('Une touche accepte seulement une lumière ou une prise (interrupteur).')
+    case 'toggle':
+      return ['light', 'switch', 'input_boolean', 'fan'].includes(e.domain) ? ok : no('Un interrupteur accepte seulement une lumière, une prise ou un booléen.')
+    case 'action':
+      return e.domain === 'scene' || e.domain === 'script' ? ok : no('Une action accepte seulement une scène ou un script.')
+    case 'state':
+      return e.domain === 'binary_sensor' ? ok : no('Une touche État accepte seulement un capteur tout ou rien (binary_sensor).')
+    case 'value':
+      return e.domain === 'sensor' ? ok : no('Une touche Valeur accepte seulement un capteur.')
+    case 'graph':
+      return isNumeric(e) ? ok : no('Un graphique accepte seulement un capteur numérique.')
     case 'dimmer':
       if (e.domain !== 'light') return no('Une molette accepte seulement une lumière.')
       return e.dimmable ? ok : no("Cette lumière n'est pas gradable : placez-la sur une touche centrale.")

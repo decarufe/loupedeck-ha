@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canPlace, isDimmable, type EntityInfo } from '../../src/shared/placement.js'
+import { canPlace, isDimmable, isNumeric, type EntityInfo } from '../../src/shared/placement.js'
 
 function ent(o: Partial<EntityInfo>): EntityInfo {
   return { entityId: 'x.y', name: 'Test', domain: 'light', areaName: null, state: 'on', dimmable: true, deviceClass: null, icon: null, ...o }
@@ -44,5 +44,22 @@ describe('canPlace', () => {
     expect(canPlace('weather', ent({ domain: 'light' })).ok).toBe(false)
     expect(canPlace('camera', ent({ domain: 'camera' })).ok).toBe(true)
     expect(canPlace('camera', ent({ domain: 'light' })).ok).toBe(false)
+  })
+  it('types de touche Bouton custom', () => {
+    expect(canPlace('toggle', ent({ domain: 'input_boolean' })).ok).toBe(true)
+    expect(canPlace('toggle', ent({ domain: 'sensor' })).ok).toBe(false)
+    expect(canPlace('action', ent({ domain: 'scene' })).ok).toBe(true)
+    expect(canPlace('action', ent({ domain: 'script' })).ok).toBe(true)
+    expect(canPlace('action', ent({ domain: 'light' })).ok).toBe(false)
+    expect(canPlace('state', ent({ domain: 'binary_sensor' })).ok).toBe(true)
+    expect(canPlace('state', ent({ domain: 'sensor' })).ok).toBe(false)
+    expect(canPlace('value', ent({ domain: 'sensor', state: 'Recyclage' })).ok).toBe(true)
+    expect(canPlace('graph', ent({ domain: 'sensor', state: '21.4' })).ok).toBe(true)
+    expect(canPlace('graph', ent({ domain: 'sensor', state: 'unavailable', unit: 'W' })).ok).toBe(true)
+    expect(canPlace('graph', ent({ domain: 'sensor', state: 'Recyclage' })).ok).toBe(false)
+  })
+  it('isNumeric', () => {
+    expect(isNumeric(ent({ domain: 'sensor', state: '-3.5' }))).toBe(true)
+    expect(isNumeric(ent({ domain: 'binary_sensor', state: '1' }))).toBe(false)
   })
 })

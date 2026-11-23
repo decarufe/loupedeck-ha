@@ -34,9 +34,14 @@ describe('normalizeInput', () => {
       .toEqual({ type: 'tap', target: { kind: 'key', index: 5 } })
   })
 
-  it('ignore les mouvements, fins de toucher et charges vides', () => {
+  it('traduit une fin de toucher (appui court ou long)', () => {
+    expect(normalizeInput('touchend', { changedTouches: [{ x: 30, y: 10, id: 1, target: { screen: 'left' } }] }))
+      .toEqual({ type: 'release', target: { kind: 'strip', side: 'left', zone: 0 } })
+    expect(normalizeInput('touchend', { changedTouches: [] })).toBeNull()
+  })
+
+  it('ignore les mouvements et charges vides', () => {
     expect(normalizeInput('touchmove', { changedTouches: [] })).toBeNull()
-    expect(normalizeInput('touchend', { changedTouches: [{ x: 30, y: 10, id: 1, target: { screen: 'left' } }] })).toBeNull()
     expect(normalizeInput('touchstart', { changedTouches: [] })).toBeNull()
     expect(normalizeInput('touchstart', undefined)).toBeNull()
     expect(normalizeInput('down', undefined)).toBeNull()

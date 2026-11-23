@@ -25,12 +25,12 @@ describe('ConfigStore', () => {
   it('defaults_layout', async () => {
     const c = (await ConfigStore.open(dir, log)).get()
     expect(c.buttons).toHaveLength(8)
-    expect(c.buttons.map(b => b?.type ?? null)).toEqual(['lights', 'climate', 'weather', 'camera', 'camera', 'camera', 'camera', null])
+    expect(c.buttons.map(b => b?.type ?? null)).toEqual(['custom', 'climate', 'weather', 'camera', 'camera', 'camera', 'camera', null])
     expect(c.device.brightness).toBe(1)
     expect(c.ha.url).toBe('http://homeassistant.local:8123')
     expect(c.editor.port).toBe(8765)
-    expect(c.buttons.map(b => b?.name)).toEqual(['Lumières', 'Température', 'Météo', 'Caméra 1', 'Caméra 2', 'Caméra 3', 'Caméra 4', undefined])
-    expect(c.buttons.map(b => b?.color)).toEqual(['#FFB300', '#FF5722', '#03A9F4', '#9C27B0', '#9C27B0', '#9C27B0', '#9C27B0', undefined])
+    expect(c.buttons.map(b => b?.name)).toEqual(['Maison', 'Température', 'Météo', 'Caméra 1', 'Caméra 2', 'Caméra 3', 'Caméra 4', undefined])
+    expect(c.buttons.map(b => b?.color)).toEqual(['#26A69A', '#FF5722', '#03A9F4', '#9C27B0', '#9C27B0', '#9C27B0', '#9C27B0', undefined])
   })
 
   it('corrupt_config_quarantined', async () => {

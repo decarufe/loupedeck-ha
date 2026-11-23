@@ -47,6 +47,7 @@ function disconnectedHa(status: HaStatus): HaPort {
     onStatus: () => () => {},
     callService: offline,
     getForecasts: offline,
+    getHistory: offline,
     listEntityInfo: offline,
     fetchCameraImage: () => Promise.reject(new CameraImageError(OFFLINE_MESSAGE)),
     close: () => {},

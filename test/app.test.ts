@@ -5,7 +5,7 @@ import path from 'node:path'
 import { setTimeout as realSleep } from 'node:timers/promises'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, type App, type AppDeps } from '../src/app.js'
-import { defaultConfig, emptyDashboard, type AppConfig, type LightsDashboard } from '../src/config/schema.js'
+import { defaultConfig, emptyDashboard, type AppConfig, type CustomDashboard } from '../src/config/schema.js'
 import type { HaPort } from '../src/ha/types.js'
 import { FakeDevice } from './fakes/fake-device.js'
 import { FakeHa } from './fakes/fake-ha.js'
@@ -81,7 +81,7 @@ describe('createApp', () => {
 
   it('end_to_end_toggle', async () => {
     const a = await start()
-    await a.store.update(withChange(a, (c) => { (c.buttons[0] as LightsDashboard).keys[0] = { entityId: 'light.salon' } }))
+    await a.store.update(withChange(a, (c) => { (c.buttons[0] as CustomDashboard).keys[0] = { kind: 'toggle', entityId: 'light.salon' } }))
     await settle()
     devices[0]!.emit('touchstart', touchKey(0))
     await settle()
@@ -92,7 +92,7 @@ describe('createApp', () => {
   it('config_change_rebuilds_navigator', async () => {
     const a = await start()
     expect(a.navigator.dashboard(7)).toBeNull()
-    await a.store.update(withChange(a, (c) => { c.buttons[7] = emptyDashboard('lights', 7) }))
+    await a.store.update(withChange(a, (c) => { c.buttons[7] = emptyDashboard('custom', 7) }))
     await settle()
     devices[0]!.emit('down', { id: 7 })
     await settle()
@@ -105,7 +105,7 @@ describe('createApp', () => {
     const close0 = vi.spyOn(has[0]!, 'close')
     await a.store.update(withChange(a, (c) => {
       c.ha.url = 'https://hass.example.net'
-      ;(c.buttons[0] as LightsDashboard).keys[0] = { entityId: 'light.salon' }
+      ;(c.buttons[0] as CustomDashboard).keys[0] = { kind: 'toggle', entityId: 'light.salon' }
     }))
     await settle()
     expect(close0).toHaveBeenCalledTimes(1)
@@ -149,7 +149,7 @@ describe('createApp', () => {
     const oldLink = a.device
     await a.store.update(withChange(a, (c) => {
       c.device.path = 'COM9'
-      ;(c.buttons[0] as LightsDashboard).keys[0] = { entityId: 'light.salon' }
+      ;(c.buttons[0] as CustomDashboard).keys[0] = { kind: 'toggle', entityId: 'light.salon' }
     }))
     await settle()
     expect(devicePaths).toEqual([null, 'COM9'])
@@ -191,7 +191,7 @@ describe('createApp', () => {
 
   it('stop_is_clean', async () => {
     const a = await start()
-    await a.store.update(withChange(a, (c) => { (c.buttons[0] as LightsDashboard).keys[0] = { entityId: 'light.salon' } }))
+    await a.store.update(withChange(a, (c) => { (c.buttons[0] as CustomDashboard).keys[0] = { kind: 'toggle', entityId: 'light.salon' } }))
     await settle()
     devices[0]!.emit('touchstart', touchKey(0)) // arme le minuteur de confirmation de 3 s
     await settle()

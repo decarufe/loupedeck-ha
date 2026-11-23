@@ -1,11 +1,17 @@
 import type { CameraDashboard } from '../config/schema.js'
 import type { InputEvent } from '../device/input.js'
 import { createHaProxySource, type CameraSource } from '../camera/source.js'
-import type { FullView } from '../views.js'
+import { PressTracker } from '../device/press.js'
+import { formatAge } from '../shared/format.js'
+import type { CameraAge, FullView } from '../views.js'
 import type { Dashboard, DashboardDeps } from './types.js'
 
-export const STALE_MS = 5000
-const STALE_CHECK_MS = 1000
+/** Compteur de la tuile haut gauche : ambre à partir de 10 s sans nouvelle image, rouge (image figée) à partir de 30 s. */
+export const WARN_MS = 10_000
+export const STALE_MS = 30_000
+/** Le compteur avance chaque seconde. */
+const TICK_MS = 1000
+const TILE_KEY = 'age'
 
 export function createCameraDashboard(
   cfg: CameraDashboard,
@@ -18,14 +24,45 @@ export function createCameraDashboard(
   let epoch = 0
   let abort: AbortController | null = null
   let sleepTimer: ReturnType<typeof setTimeout> | null = null
-  let staleTimer: ReturnType<typeof setInterval> | null = null
-  let reportedStale = false
+  let wakeUp: (() => void) | null = null
+  let tickTimer: ReturnType<typeof setInterval> | null = null
+  let busy: CameraAge['busy'] = null
+  const press = new PressTracker()
 
   const isStale = () => image !== null && Date.now() - lastFrameAt >= STALE_MS
 
   function sleep(ms: number): Promise<void> {
     if (ms <= 0) return Promise.resolve()
-    return new Promise((resolve) => { sleepTimer = setTimeout(() => { sleepTimer = null; resolve() }, ms) })
+    return new Promise((resolve) => {
+      wakeUp = () => { if (sleepTimer) clearTimeout(sleepTimer); sleepTimer = null; wakeUp = null; resolve() }
+      sleepTimer = setTimeout(() => wakeUp?.(), ms)
+    })
+  }
+
+  /** Appui court sur la tuile : nouvelle image tout de suite (la boucle n'attend pas la fin de l'intervalle). */
+  function refresh(): void {
+    if (busy === 'reload') return
+    busy = 'refresh'
+    d.requestRender()
+    wakeUp?.()
+  }
+
+  /** Appui long sur la tuile : recharge l'intégration de la caméra dans Home Assistant, puis redemande une image. */
+  function reload(): void {
+    if (!cfg.entityId) return
+    busy = 'reload'
+    d.requestRender()
+    d.actions.reloadIntegration(cfg.entityId).catch(() => undefined).finally(() => {
+      if (busy === 'reload') busy = 'refresh'
+      d.requestRender()
+      wakeUp?.()
+    })
+  }
+
+  function age(): CameraAge {
+    const ms = Date.now() - lastFrameAt
+    if (!image) return { text: '—', level: 'bad', busy }
+    return { text: formatAge(ms), level: ms >= STALE_MS ? 'bad' : ms >= WARN_MS ? 'warn' : 'ok', busy }
   }
 
   async function loop(mine: number, signal: AbortSignal): Promise<void> {
@@ -37,12 +74,13 @@ export function createCameraDashboard(
         if (mine !== epoch) return
         image = frame
         lastFrameAt = Date.now()
-        reportedStale = false
+        if (busy === 'refresh') busy = null
         ok = true
         d.requestRender()
       } catch {
         if (mine !== epoch) return
         // On garde la dernière image ; un nouvel essai part après un intervalle complet.
+        if (busy === 'refresh') { busy = null; d.requestRender() }
       }
       await sleep(ok ? Math.max(0, cfg.intervalMs - (Date.now() - t0)) : cfg.intervalMs)
     }
@@ -60,10 +98,18 @@ export function createCameraDashboard(
         stale: isStale(),
         offline,
         fit,
+        age: age(),
       }
     },
 
-    handle(_e: InputEvent) {},
+    /** Seule la tuile haut gauche réagit : appui court = forcer une image, appui long = recharger l'intégration. */
+    handle(e: InputEvent) {
+      if (!cfg.entityId) return
+      const onTile = (e.type === 'tap' || e.type === 'release') && e.target.kind === 'strip' && e.target.side === 'left' && e.target.zone === 0
+      if (!onTile) return
+      if (e.type === 'tap') press.press(TILE_KEY, refresh, reload)
+      else press.release(TILE_KEY)
+    },
 
     activate() {
       this.deactivate()
@@ -71,11 +117,7 @@ export function createCameraDashboard(
       source ??= makeSource(cfg)
       const mine = ++epoch
       abort = new AbortController()
-      reportedStale = isStale()
-      staleTimer = setInterval(() => {
-        const stale = isStale()
-        if (stale !== reportedStale) { reportedStale = stale; d.requestRender() }
-      }, STALE_CHECK_MS)
+      tickTimer = setInterval(() => d.requestRender(), TICK_MS)
       void loop(mine, abort.signal)
     },
 
@@ -85,8 +127,11 @@ export function createCameraDashboard(
       abort = null
       if (sleepTimer) clearTimeout(sleepTimer)
       sleepTimer = null
-      if (staleTimer) clearInterval(staleTimer)
-      staleTimer = null
+      wakeUp = null
+      if (tickTimer) clearInterval(tickTimer)
+      tickTimer = null
+      press.clear()
+      if (busy === 'refresh') busy = null
     },
   }
 }

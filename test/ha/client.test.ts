@@ -263,7 +263,7 @@ describe('HaClient', () => {
     const by = Object.fromEntries(infos.map((i) => [i.entityId, i]))
     expect(by['light.salon']).toEqual({
       entityId: 'light.salon', name: 'Plafonnier salon', domain: 'light', areaName: 'Salon',
-      state: 'on', dimmable: true, deviceClass: null, icon: null,
+      state: 'on', dimmable: true, deviceClass: null, icon: null, unit: null,
     })
     // Pièce héritée de l'appareil quand l'entité n'en a pas.
     expect(by['light.cuisine']).toMatchObject({ areaName: 'Cuisine', dimmable: false, icon: 'mdi:ceiling-light', name: 'Cuisine' })
@@ -453,7 +453,7 @@ describe('FakeHa', () => {
     await expect(ha.fetchCameraImage('camera.porte', { width: 480, height: 270 })).rejects.toBeInstanceOf(CameraImageError)
     ha.setEntity('light.salon', 'on', { friendly_name: 'Salon', brightness: 10 })
     expect(await ha.listEntityInfo()).toEqual([
-      { entityId: 'light.salon', name: 'Salon', domain: 'light', areaName: null, state: 'on', dimmable: true, deviceClass: null, icon: null },
+      { entityId: 'light.salon', name: 'Salon', domain: 'light', areaName: null, state: 'on', dimmable: true, deviceClass: null, icon: null, unit: null },
     ])
   })
 })

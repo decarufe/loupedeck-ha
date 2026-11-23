@@ -109,13 +109,28 @@ describe('painters', () => {
     expect(r).toBeGreaterThan(200)
     expect(g).toBeLessThan(50)
   })
-  it('full_stale_grayscale', async () => {
+  it('full_stale_keeps_colour_offline_grayscale', async () => {
+    // Image figée : c'est la tuile compteur qui le signale ; l'image garde ses couleurs.
+    const stale = createSurface()
+    await paint(stale, { kind: 'full', image: redJpeg(), message: null, stale: true, offline: false, fit: 'cover' })
+    const [r0, g0] = px(stale, 240, 135)
+    expect(r0).toBeGreaterThan(g0! + 50)
     const s = createSurface()
-    await paint(s, { kind: 'full', image: redJpeg(), message: null, stale: true, offline: false })
+    await paint(s, { kind: 'full', image: redJpeg(), message: null, stale: false, offline: true, fit: 'cover' })
     const [r, g, b] = px(s, 240, 135)
     expect(r).toBe(g)
     expect(g).toBe(b)
     expect(r).toBeGreaterThan(0)
+  })
+
+  it('full_paints_age_tile_top_left', async () => {
+    const s = createSurface()
+    await paint(s, { kind: 'full', image: redJpeg(), message: null, stale: true, offline: false, fit: 'cover', age: { text: '42 s', level: 'bad', busy: null } })
+    // Bordure rouge de la tuile dans la zone haut gauche, image intacte ailleurs.
+    const [r, g, b] = px(s, 4, 45)
+    expect(r).toBeGreaterThan(200)
+    expect(g).toBeLessThan(120)
+    expect(b).toBeLessThan(120)
   })
   it('full_invalid_jpeg_shows_message', async () => {
     const s = createSurface()
@@ -125,6 +140,53 @@ describe('painters', () => {
     for (let i = 0; i < d.length; i += 4) if (d[i]! + d[i + 1]! + d[i + 2]! > 0) lit++
     expect(lit).toBeGreaterThan(0)
   })
+  it('graph_page_paints_curve_hints_and_scrollbar', async () => {
+    const s = createSurface()
+    const t0 = 1_000_000
+    await paint(s, {
+      kind: 'graph', title: 'Conso', valueText: '1 240 W', subtitle: '12 h · en direct · échelle ×1', color: '#FF0000',
+      points: [{ t: t0, v: 0 }, { t: t0 + 500, v: 10 }, { t: t0 + 1000, v: 5 }], start: t0, end: t0 + 1000, lo: -1, hi: 11, decimals: 0,
+      xLabels: ['il y a 12 h', 'il y a 6 h', 'maintenant'], scroll: { from: 0.5, width: 0.25 },
+      hints: { L0: { glyph: '↕', title: 'Échelle V', sub: '×1' } }, message: null, offline: false,
+    })
+    // Courbe rouge dans la zone du graphique, barre de défilement rouge en bas, indication dans la zone de la molette.
+    let red = 0
+    const d = s.ctx.getImageData(100, 50, 312, 186).data
+    for (let i = 0; i < d.length; i += 4) if (d[i]! > 200 && d[i + 1]! < 80) red++
+    expect(red).toBeGreaterThan(100)
+    const [r] = px(s, 100 + 0.6 * 312, 259)
+    expect(r).toBeGreaterThan(200)
+    const hint = s.ctx.getImageData(0, 0, 60, 90).data
+    let lit = 0
+    for (let i = 0; i < hint.length; i += 4) if (hint[i]! + hint[i + 1]! + hint[i + 2]! > 100) lit++
+    expect(lit).toBeGreaterThan(20)
+  })
+
+  it('weather_paints_update_zone_top_right', async () => {
+    const s = createSurface()
+    await paint(s, { kind: 'weather', current: null, days: [], message: null, offline: false, updated: { text: '22 nov., 22 h 48', busy: false } })
+    const d = s.ctx.getImageData(420, 0, 60, 90).data
+    let lit = 0
+    for (let i = 0; i < d.length; i += 4) if (d[i]! + d[i + 1]! + d[i + 2]! > 300) lit++
+    expect(lit).toBeGreaterThan(20)
+  })
+
+  it('grid_paints_big_and_graph_tiles', async () => {
+    const s = createSurface()
+    const base = { icon: null, state: 'off' as const, level: null, pending: false, accent: '#00FF00' }
+    const keys = Array.from({ length: 12 }, () => ({ ...base, label: '', state: 'empty' as const, valueText: null }))
+    keys[0] = { ...base, label: 'Ext', valueText: '-3,6 °C', layout: 'big' } as never
+    keys[1] = { ...base, label: 'CPU', valueText: '23 %', layout: 'graph', sub: '6h', spark: { values: [1, 5, 2, 8], style: 'area' } } as never
+    await paint(s, { kind: 'grid', keys, left: [], right: [], offline: false })
+    // Barre de couleur au bas de la touche Valeur, courbe verte dans la touche Graphique.
+    const [, g0] = px(s, 105, 88)
+    expect(g0).toBeGreaterThan(200)
+    let green = 0
+    const d = s.ctx.getImageData(150, 50, 90, 40).data
+    for (let i = 0; i < d.length; i += 4) if (d[i + 1]! > 150 && d[i]! < 100) green++
+    expect(green).toBeGreaterThan(20)
+  })
+
   it('weather_paints_current', async () => {
     const s = createSurface()
     const v: WeatherView = {

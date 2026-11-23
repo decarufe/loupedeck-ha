@@ -2,7 +2,7 @@ import type { WeatherDashboard } from '../config/schema.js'
 import type { InputEvent } from '../device/input.js'
 import type { Forecast, ForecastType, HaEntity } from '../ha/types.js'
 import { weatherIcon } from '../render/icons.js'
-import { CONDITION_LABELS, formatTemp } from '../shared/format.js'
+import { CONDITION_LABELS, formatTemp, formatUpdated } from '../shared/format.js'
 import type { WeatherDay, WeatherView } from '../views.js'
 import type { Dashboard, DashboardDeps } from './types.js'
 
@@ -49,6 +49,23 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
   let inFlight = false
   let refetch = false
   let lastEntity: HaEntity | undefined
+  /** Dernière mise à jour des données affichées (prévisions reçues ou état de l'entité changé). */
+  let updatedAt: number | null = null
+  let refreshing = false
+
+  /** Appui sur la zone haut droite : Home Assistant relit l'entité, puis les prévisions sont redemandées. */
+  async function refresh(): Promise<void> {
+    if (!id || refreshing) return
+    refreshing = true
+    d.requestRender()
+    try {
+      await d.actions.updateEntity(id).catch(() => undefined)
+      await fetchForecasts()
+    } finally {
+      refreshing = false
+      d.requestRender()
+    }
+  }
 
   function weather(): HaEntity | undefined {
     return id ? d.ha.entities()[id] : undefined
@@ -69,6 +86,7 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
     try {
       const list = await d.ha.getForecasts(id, type)
       if (mine !== epoch) return
+      updatedAt = Date.now()
       days = aggregateByDay(list, new Date()).map((x) => ({
         label: DAY_FORMAT.format(new Date(`${x.date}T00:00:00`)),
         icon: weatherIcon(x.condition),
@@ -91,7 +109,8 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
       const offline = d.ha.status().state !== 'online'
       const e = weather()
       if (!id) return { kind: 'weather', current: null, days: [], message: 'Aucune entité météo configurée', offline }
-      if (!e || e.state === 'unavailable') return { kind: 'weather', current: null, days, message: 'Météo indisponible', offline }
+      const updated = { text: refreshing ? 'Actualisation…' : updatedAt ? formatUpdated(new Date(updatedAt)) : '—', busy: refreshing }
+      if (!e || e.state === 'unavailable') return { kind: 'weather', current: null, days, message: 'Météo indisponible', offline, updated }
       const apparent = e.attributes.apparent_temperature
       return {
         kind: 'weather',
@@ -104,10 +123,13 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
         days,
         message: forecastType(e) ? null : 'Pas de prévisions pour cette entité',
         offline,
+        updated,
       }
     },
 
-    handle(_e: InputEvent) {},
+    handle(e: InputEvent) {
+      if (e.type === 'tap' && e.target.kind === 'strip' && e.target.side === 'right' && e.target.zone === 0) void refresh()
+    },
 
     activate() {
       this.deactivate()
@@ -119,7 +141,10 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
         if (e !== lastEntity) {
           const changed = e?.state !== lastEntity?.state || e?.attributes !== lastEntity?.attributes
           lastEntity = e
-          if (changed) void fetchForecasts()
+          if (changed) {
+            updatedAt = Date.now()
+            void fetchForecasts()
+          }
         }
       })]
       timer = setInterval(() => { void fetchForecasts() }, WEATHER_REFRESH_MS)

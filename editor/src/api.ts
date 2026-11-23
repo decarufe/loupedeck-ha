@@ -51,6 +51,8 @@ export function putConfig(cfg: PublicConfig, newToken?: string) {
 export const undo = () => request<PublicConfig>('/api/config/undo', { method: 'POST', headers: WRITE_HEADERS, body: '{}' })
 export const getEntities = () => request<EntityInfo[]>('/api/entities')
 export const getStatus = () => request<Status>('/api/status')
+export const pageCommand = (button: number, command: 'refresh' | 'reload') =>
+  request<{ ok: true }>(`/api/pages/${button}/command`, { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify({ command }) })
 export const previewUrl = (button: number, version: number) => `/api/preview/${button}.png?v=${version}`
 
 /**

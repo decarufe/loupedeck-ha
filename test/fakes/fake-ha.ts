@@ -1,4 +1,4 @@
-import { OFFLINE_MESSAGE, type Forecast, type ForecastType, type HaEntity, type HaPort, type HaStatus } from '../../src/ha/types.js'
+import { OFFLINE_MESSAGE, type Forecast, type ForecastType, type HaEntity, type HaPort, type HaStatus, type HistoryPoint } from '../../src/ha/types.js'
 import { isDimmable, type EntityInfo } from '../../src/shared/placement.js'
 
 // Plus petit JPEG reconnaissable (SOI + EOI) : suffisant pour les tests qui ne décodent pas l'image.
@@ -11,6 +11,8 @@ export class FakeHa implements HaPort {
   forecastError: Error | null = null
   forecastCalls: { entityId: string; type: ForecastType }[] = []
   cameraImage: Buffer | Error = TINY_JPEG
+  history: Record<string, HistoryPoint[]> = {}
+  historyCalls: { entityId: string; startMs: number; endMs: number }[] = []
   private st: HaStatus = { state: 'online', reason: null }
   private ents: Record<string, HaEntity> = {}
   private entityListeners = new Set<(e: Record<string, HaEntity>) => void>()
@@ -62,6 +64,11 @@ export class FakeHa implements HaPort {
     return Promise.resolve(this.forecasts)
   }
 
+  getHistory(entityId: string, startMs: number, endMs: number): Promise<HistoryPoint[]> {
+    this.historyCalls.push({ entityId, startMs, endMs })
+    return Promise.resolve((this.history[entityId] ?? []).filter((p) => p.t >= startMs && p.t <= endMs))
+  }
+
   listEntityInfo(): Promise<EntityInfo[]> {
     return Promise.resolve(Object.values(this.ents).map((e) => ({
       entityId: e.entity_id,
@@ -72,6 +79,7 @@ export class FakeHa implements HaPort {
       dimmable: isDimmable(e.attributes),
       deviceClass: e.attributes.device_class ?? null,
       icon: e.attributes.icon ?? null,
+      unit: e.attributes.unit_of_measurement ?? null,
     })))
   }
 

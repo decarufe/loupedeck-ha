@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { type FastifyReply } from 'fastify'
-import { appConfigSchema, type AppConfig } from '../config/schema.js'
+import { appConfigSchema, KNOB_IDS, type AppConfig, type Tile } from '../config/schema.js'
 import { ConfigStore, ConfigValidationError } from '../config/store.js'
 import type { DeviceLink } from '../device/link.js'
 import type { HaPort } from '../ha/types.js'
@@ -82,9 +82,16 @@ function placementIssues(cfg: AppConfig, known: Map<string, EntityInfo>): string
     if (!b) return
     const t = `Bouton ${i + 1}`
     switch (b.type) {
-      case 'lights':
-        b.keys.forEach((k, j) => check(`${t}, touche ${j + 1}`, 'key', k?.entityId))
-        for (const [knob, slot] of Object.entries(b.dimmers)) check(`${t}, molette ${knob}`, 'dimmer', slot?.entityId)
+      case 'custom': {
+        const tileCheck = (where: string, tile: Tile | null) => {
+          if (tile && tile.kind !== 'clock') check(where, tile.kind, tile.entityId)
+        }
+        b.keys.forEach((k, j) => tileCheck(`${t}, touche ${j + 1}`, k))
+        for (const knob of KNOB_IDS) tileCheck(`${t}, molette ${knob}`, b.strips[knob])
+        break
+      }
+      case 'graph':
+        check(`${t}, graphique`, 'graph', b.entityId)
         break
       case 'climate':
         check(`${t}, thermostat`, 'climate', b.entityId)
@@ -231,6 +238,33 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     await paint(surface, view)
     const png = await toPng(surface)
     return reply.header('Content-Type', 'image/png').header('Cache-Control', 'no-store').send(png)
+  })
+
+  /** Commandes ponctuelles d'une page : `refresh` (météo : relire l'entité ; caméra : nouvelle image fixe), `reload` (caméra : recharger l'intégration). */
+  app.post<{ Params: { index: string } }>('/api/pages/:index/command', async (req, reply) => {
+    const i = Number(req.params.index)
+    const cfg = Number.isInteger(i) && i >= 0 && i < 8 ? d.store.get().buttons[i] : undefined
+    if (!cfg) return reply.code(404).send({ error: 'Page inconnue' })
+    const body = isRecord(req.body) ? req.body : {}
+    const command = body.command
+    const entityId = 'entityId' in cfg ? cfg.entityId : null
+    if (!entityId) return reply.code(400).send({ error: 'Aucune entité configurée sur cette page' })
+    const call = async (service: string) => {
+      if (d.ha().status().state !== 'online') return reply.code(503).send({ error: 'Home Assistant hors ligne' })
+      try {
+        await d.ha().callService('homeassistant', service, undefined, { entity_id: entityId })
+      } catch {
+        return reply.code(502).send({ error: 'Home Assistant a refusé la commande' })
+      }
+      return { ok: true }
+    }
+    if (cfg.type === 'weather' && command === 'refresh') return call('update_entity')
+    if (cfg.type === 'camera' && command === 'refresh') {
+      for (const k of [...stills.keys()]) if (k.startsWith(`${i}:`)) stills.delete(k)
+      return { ok: true }
+    }
+    if (cfg.type === 'camera' && command === 'reload') return call('reload_config_entry')
+    return reply.code(400).send({ error: 'Commande inconnue pour cette page' })
   })
 
   app.get('/api/status', async () => {
