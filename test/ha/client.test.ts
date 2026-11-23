@@ -256,6 +256,28 @@ describe('HaClient', () => {
     })
   })
 
+  it('home_location_reads_get_config', async () => {
+    const server = await startServer()
+    const c = await onlineClient(server)
+    expect(await c.homeLocation()).toEqual({ latitude: 45.50169, longitude: -73.56725 })
+    expect(server.received.some((m) => m.type === 'get_config')).toBe(true)
+  })
+
+  it('home_location_is_null_when_never_configured', async () => {
+    const server = await startServer()
+    server.homeConfig = { latitude: 0, longitude: 0 }
+    const c = await onlineClient(server)
+    expect(await c.homeLocation()).toBeNull()
+  })
+
+  it('home_location_offline_rejects', async () => {
+    const server = await startServer()
+    const c = makeClient(server, { token: BAD })
+    c.start()
+    await vi.waitFor(() => expect(c.status().state).toBe('offline'), waitOpts)
+    await expect(c.homeLocation()).rejects.toThrow('Home Assistant hors ligne')
+  })
+
   it('entity_info_joins_registries', async () => {
     const server = await startServer()
     const c = await onlineClient(server)
@@ -451,6 +473,9 @@ describe('FakeHa', () => {
     expect(Buffer.isBuffer(await ha.fetchCameraImage('camera.porte', { width: 480, height: 270 }))).toBe(true)
     ha.cameraImage = new CameraImageError('Image indisponible')
     await expect(ha.fetchCameraImage('camera.porte', { width: 480, height: 270 })).rejects.toBeInstanceOf(CameraImageError)
+    expect(await ha.homeLocation()).toEqual({ latitude: 45.5, longitude: -73.5 })
+    ha.location = null
+    expect(await ha.homeLocation()).toBeNull()
     ha.setEntity('light.salon', 'on', { friendly_name: 'Salon', brightness: 10 })
     expect(await ha.listEntityInfo()).toEqual([
       { entityId: 'light.salon', name: 'Salon', domain: 'light', areaName: null, state: 'on', dimmable: true, deviceClass: null, icon: null, unit: null },

@@ -4,6 +4,17 @@ import type { HaEntity, HaStatus } from '../../src/ha/types.js'
 import { FakeHa } from '../fakes/fake-ha.js'
 
 describe('HaProxy', () => {
+  it('home_location_asks_the_current_client', async () => {
+    const fake1 = new FakeHa()
+    const fake2 = new FakeHa()
+    vi.spyOn(fake1, 'close').mockImplementation(() => {})
+    fake2.location = { latitude: 46, longitude: -71 }
+    const proxy = new HaProxy(fake1)
+    expect(await proxy.homeLocation()).toEqual({ latitude: 45.5, longitude: -73.5 })
+    proxy.replace(fake2)
+    expect(await proxy.homeLocation()).toEqual({ latitude: 46, longitude: -71 })
+  })
+
   it('replace_rebinds_listeners', () => {
     const fake1 = new FakeHa()
     const fake2 = new FakeHa()

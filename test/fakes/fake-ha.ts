@@ -1,5 +1,6 @@
 import { OFFLINE_MESSAGE, type Forecast, type ForecastType, type HaEntity, type HaPort, type HaStatus, type HistoryPoint } from '../../src/ha/types.js'
 import { isDimmable, type EntityInfo } from '../../src/shared/placement.js'
+import type { GeoPoint } from '../../src/weather/openmeteo.js'
 
 // Plus petit JPEG reconnaissable (SOI + EOI) : suffisant pour les tests qui ne décodent pas l'image.
 const TINY_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xd9])
@@ -11,6 +12,8 @@ export class FakeHa implements HaPort {
   forecastError: Error | null = null
   forecastCalls: { entityId: string; type: ForecastType }[] = []
   cameraImage: Buffer | Error = TINY_JPEG
+  /** Position de la maison renvoyée par `homeLocation()` (null = jamais configurée). */
+  location: GeoPoint | null = { latitude: 45.5, longitude: -73.5 }
   history: Record<string, HistoryPoint[]> = {}
   historyCalls: { entityId: string; startMs: number; endMs: number }[] = []
   private st: HaStatus = { state: 'online', reason: null }
@@ -67,6 +70,10 @@ export class FakeHa implements HaPort {
   getHistory(entityId: string, startMs: number, endMs: number): Promise<HistoryPoint[]> {
     this.historyCalls.push({ entityId, startMs, endMs })
     return Promise.resolve((this.history[entityId] ?? []).filter((p) => p.t >= startMs && p.t <= endMs))
+  }
+
+  homeLocation(): Promise<GeoPoint | null> {
+    return Promise.resolve(this.location)
   }
 
   listEntityInfo(): Promise<EntityInfo[]> {

@@ -1,5 +1,6 @@
 import type { Logger } from '../log.js'
 import type { EntityInfo } from '../shared/placement.js'
+import type { GeoPoint } from '../weather/openmeteo.js'
 import type { Forecast, ForecastType, HaEntity, HaPort, HaStatus, HistoryPoint } from './types.js'
 
 /**
@@ -55,6 +56,10 @@ export class HaProxy implements HaPort {
 
   getHistory(entityId: string, startMs: number, endMs: number): Promise<HistoryPoint[]> {
     return this.inner.getHistory(entityId, startMs, endMs)
+  }
+
+  homeLocation(): Promise<GeoPoint | null> {
+    return this.inner.homeLocation()
   }
 
   listEntityInfo(): Promise<EntityInfo[]> {
