@@ -13,10 +13,12 @@ export interface DashboardDeps {
   ha: HaPort;
   actions: Actions;
   requestRender: () => void;
+  fetchOutlook?: (loc: GeoPoint) => Promise<OutlookPoint[]>;
 }
 export interface Dashboard {
   view(): View;
   handle(e: InputEvent): void;
+  prepareAlert?(): void;
   activate(): void;
   deactivate(): void;
 }
