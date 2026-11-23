@@ -3,18 +3,18 @@
 Transforme une **Loupedeck Live** en télécommande **Home Assistant** sous Windows : lumières, thermostat,
 météo et caméras, un tableau de bord par bouton rond.
 
-## Prérequis
-
-- Windows 11, **Node.js 24 ou plus récent**.
-- **pnpm** (le projet n'utilise pas npm) : `corepack enable` ou [pnpm.io/installation](https://pnpm.io/installation).
-- Une Loupedeck Live branchée en USB.
-
 ## Installation
 
-```powershell
-pnpm install
-pnpm run build
-```
+Prérequis : Windows 11 (x64) et une Loupedeck Live branchée en USB. Rien d'autre à installer : Node.js et
+pnpm ne servent qu'à [contribuer](#contribuer).
+
+1. Téléchargez `LoupedeckHA-Setup-x.y.z.exe` depuis la
+   [dernière version publiée](https://github.com/decarufe/loupedeck-ha/releases/latest).
+2. Lancez-le. L'installateur n'est pas signé : à la première installation, Windows SmartScreen affiche
+   « Windows a protégé votre PC ». Cliquez **Informations complémentaires**, puis **Exécuter quand même**.
+3. L'installation se fait pour votre compte seulement, sans droits administrateur. L'application démarre
+   aussitôt : son icône apparaît dans la zone de notification (près de l'horloge ; elle peut être cachée
+   derrière la flèche « ^ »).
 
 ### Libérer la console
 
@@ -26,21 +26,31 @@ toute seule.
 ### Jeton Home Assistant
 
 Dans Home Assistant : **Profil → Sécurité → Jetons d'accès longue durée → Créer un jeton**. Copiez-le
-tout de suite : il n'est affiché qu'une fois. Le jeton n'est jamais écrit dans les journaux.
+tout de suite : il n'est affiché qu'une fois. Il se saisit dans l'éditeur (voir plus bas) et n'est jamais
+écrit dans les journaux.
+
+## Utilisation
+
+### L'icône de notification
+
+Clic gauche : ouvre l'éditeur. Clic droit :
+
+| Entrée | Effet |
+| --- | --- |
+| **Redémarrer pour installer la version x.y.z** | Présente seulement quand une mise à jour est prête (voir plus bas). |
+| **Ouvrir la configuration** | Ouvre l'éditeur dans votre navigateur (`http://127.0.0.1:8765/` par défaut). |
+| **Démarrer avec Windows** | Case à cocher : lance l'application à l'ouverture de votre session. Cochée au premier lancement. |
+| **À propos…** | Version installée, lien vers ce dépôt, bouton pour ouvrir le dossier des journaux. |
+| **Quitter** | Arrête proprement l'application (la console s'éteint) et retire l'icône. |
+
+Relancer « Loupedeck HA » depuis le menu Démarrer alors qu'elle tourne déjà ouvre simplement l'éditeur.
+
+Si l'application plante, elle est relancée automatiquement après 5 s ; l'icône reste disponible.
 
 ### Configuration : l'éditeur visuel
 
-La configuration se fait dans **l'éditeur**, une page web locale servie par l'application :
-
-1. Lancez l'application (`pnpm start`, voir plus bas) ;
-2. Ouvrez **<http://127.0.0.1:8765>** dans votre navigateur, ou le raccourci
-   **« Loupedeck HA – Configuration »** du Bureau ou du menu Démarrer (voir
-   [Raccourci vers l'éditeur](#raccourci-vers-léditeur)).
-
-`pnpm run build` compile **l'application et l'éditeur** ; sans cette étape, la page affiche seulement un
-message d'attente.
-
-Dans l'éditeur :
+La configuration se fait dans **l'éditeur**, une page web locale servie par l'application : menu de l'icône
+→ **Ouvrir la configuration**.
 
 - **Réglages** : adresse Home Assistant (`http://…` ou `https://…`), jeton, certificat auto-signé,
   luminosité de la console. Le jeton saisi n'est jamais réaffiché ; changer d'adresse demande de le saisir
@@ -60,10 +70,9 @@ sur les boutons 3 à 6.
 
 #### En recours : modifier le fichier à la main
 
-**Application arrêtée** seulement (Ctrl+C, ou fin de la tâche « Loupedeck HA ») : sinon, la prochaine
-modification faite dans l'éditeur écraserait la vôtre. Modifiez le fichier généré sans le remplacer (les
-sections `device` et `editor` et les 8 entrées de `buttons` doivent rester présentes), puis relancez
-l'application.
+**Application arrêtée** seulement (menu de l'icône → **Quitter**) : sinon, la prochaine modification faite
+dans l'éditeur écraserait la vôtre. Modifiez le fichier généré sans le remplacer (les sections `device` et
+`editor` et les 8 entrées de `buttons` doivent rester présentes), puis relancez l'application.
 
 - `keys` contient toujours **12** emplacements (`null` = touche vide) ; `buttons` en contient toujours **8**.
 - `ha.url` commence par `http://` ou `https://` ; `"allowSelfSigned": true` seulement pour un certificat
@@ -71,113 +80,97 @@ l'application.
 - Un fichier invalide est mis de côté (`config.invalid-<date>.json`) et remplacé par les valeurs par défaut :
   le journal l'indique.
 
-## Lancer
-
-```powershell
-pnpm start
-```
-
-Les journaux s'affichent dans le terminal et sont aussi écrits dans `%APPDATA%\loupedeck-ha\logs\app.log`.
-Au démarrage, le journal indique le fichier de configuration, l'URL Home Assistant, si un jeton est configuré
-et l'adresse de l'éditeur. Ctrl+C arrête proprement l'application. Pour plus de détails dans le journal :
-
-```powershell
-$env:LOG_LEVEL='debug'; pnpm start
-```
-
 Sans jeton, ou si Home Assistant est injoignable, la console affiche ses tableaux grisés avec l'indicateur
 « HA hors ligne » ; la reconnexion est automatique (une connexion qui ne répond plus est détectée en
 40 s au plus).
 
-## Démarrage automatique avec Windows
+### Mises à jour automatiques
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Install
-```
+Chaque modification fusionnée dans ce dépôt publie une nouvelle version. L'application vérifie s'il en existe
+une 10 s après son démarrage, puis toutes les 4 heures, et la télécharge en arrière-plan. Quand elle est
+prête, une notification Windows l'annonce et l'entrée **Redémarrer pour installer la version x.y.z**
+apparaît en tête du menu. Rien ne s'installe pendant que vous utilisez la console : la mise à jour
+s'installe quand vous choisissez cette entrée, ou sinon à la prochaine fermeture de l'application.
+Sans connexion Internet, la vérification échoue en silence et réessaie au cycle suivant.
 
-Crée la tâche planifiée **« Loupedeck HA »**, lancée à l'ouverture de votre session, sans fenêtre
-(`scripts\launch-hidden.vbs` exécute `node dist\main.js` depuis la racine du dépôt ; `node` doit donc être
-dans le PATH).
+La configuration et le jeton sont conservés par les mises à jour comme par la désinstallation.
 
-**Relance après un plantage** : si l'application s'arrête sur une erreur (code de sortie différent de 0),
-`launch-hidden.vbs` la relance après 5 s, autant de fois que nécessaire. Un arrêt volontaire (Ctrl+C,
-SIGINT ou SIGTERM : code de sortie 0) arrête la boucle.
+### Journaux
 
-Pour retirer la tâche :
+Dans `%APPDATA%\loupedeck-ha\logs\` (menu de l'icône → **À propos…** → **Ouvrir les journaux**) :
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Uninstall
-```
-
-Après une mise à jour du code, relancez `pnpm run build` (application et éditeur).
-
-## Raccourci vers l'éditeur
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1 -Install
-```
-
-En plus de la tâche planifiée, `-Install` crée le raccourci **« Loupedeck HA – Configuration »** (fichier
-`.url`) sur le **Bureau** et dans le **menu Démarrer**. Il ouvre l'éditeur sur `http://127.0.0.1:<port>/`
-(l'application doit tourner). Le port est lu dans `editor.port` de `%APPDATA%\loupedeck-ha\config.json`,
-sinon 8765 ; si vous changez le port, relancez `-Install` pour mettre les raccourcis à jour. Le jeton n'est
-jamais lu ni affiché. `-Uninstall` supprime la tâche et les deux raccourcis (sans erreur s'ils n'existent pas).
-
-Test du script (dossiers temporaires, aucune tâche ni raccourci réel) :
-`powershell -ExecutionPolicy Bypass -File scripts\test-shortcuts.ps1`
+- `app.log` : l'application (console, Home Assistant, éditeur). Au démarrage, il indique le fichier de
+  configuration, l'URL Home Assistant, si un jeton est configuré et l'adresse de l'éditeur.
+- `shell.log` : l'icône, le démarrage avec Windows, les mises à jour et les relances après plantage.
 
 ## Dépannage
 
 - **Écran noir alors que la console est connectée** : la Live démarre avec la luminosité à 0 ; rien n'est
   visible tant que l'application n'a pas envoyé la luminosité. L'application l'envoie à chaque connexion
-  (`device.brightness`, 1 par défaut). Le journal doit afficher « Console connectée » puis
+  (`device.brightness`, 1 par défaut). `app.log` doit afficher « Console connectée » puis
   « Première image affichée sur la console ».
 - **Déconnexions après une mise en veille** : désactivez la **suspension sélective USB** (Panneau de
   configuration → Options d'alimentation → Modifier les paramètres du mode → Paramètres d'alimentation
   avancés → Paramètres USB → Paramètre de la suspension sélective USB → Désactivé).
 - **Plusieurs consoles ou détection ratée** : fixez le port dans `device.path` (ex. `"COM4"`).
+- **L'icône n'apparaît pas** : vérifiez la zone des icônes cachées (flèche « ^ ») ; `shell.log` doit
+  contenir « Shell démarré ».
 - **Firmware** : la console testée est en 0.2.5. Le problème de dessin connu avec le firmware 0.2.26 ne la
   concerne pas ; voir `docs/superpowers/notes/2026-11-20-spike-throughput.md`.
 
-## Développement
+## Passer de la version du dépôt à la version installée
+
+Si vous lanciez l'application depuis le dépôt (`pnpm start`, tâche planifiée « Loupedeck HA » créée par
+l'ancien script d'installation du dépôt) :
+
+1. Arrêtez la version du dépôt (Ctrl+C, ou fin de la tâche « Loupedeck HA »).
+2. Installez la version publiée (voir [Installation](#installation)).
+
+Au premier lancement, la version installée supprime l'ancienne tâche planifiée « Loupedeck HA » et les
+raccourcis « Loupedeck HA – Configuration » du Bureau et du menu Démarrer : sinon, les deux versions se
+disputeraient la console à l'ouverture de session. La configuration (`%APPDATA%\loupedeck-ha`) est reprise
+telle quelle.
+
+## Contribuer
+
+### Prérequis
+
+- Windows 11, **Node.js 24 ou plus récent**.
+- **pnpm** (le projet n'utilise pas npm) : `corepack enable` ou [pnpm.io/installation](https://pnpm.io/installation).
+
+### Compiler et lancer depuis le dépôt
+
+```powershell
+pnpm install
+pnpm run build                 # compile l'application (dist\) et l'éditeur (editor\dist\)
+pnpm start                     # l'application seule, sans icône (Ctrl+C pour arrêter)
+pnpm run app                   # la version Electron (icône de notification) depuis le dépôt
+```
+
+**Quittez d'abord la version installée** (menu de l'icône → **Quitter**) : les deux versions partagent la
+console, le port de l'éditeur et `%APPDATA%\loupedeck-ha`, et rien n'empêche de les lancer en même temps.
+
+En développement, la case « Démarrer avec Windows » est grisée et les mises à jour automatiques sont
+désactivées. Pour plus de détails dans le journal : `$env:LOG_LEVEL='debug'; pnpm start`.
+
+### Développement
 
 ```powershell
 pnpm test                      # tests (application puis éditeur)
 pnpm exec tsc -p . --noEmit    # vérification des types
-pnpm run build                 # compile l'application (dist\) et l'éditeur (editor\dist\)
 pnpm run dev                   # application avec rechargement (tsx)
 pnpm run editor:dev            # éditeur avec rechargement (Vite)
+pnpm run package               # installateur local dans release\ (sans publication)
+pnpm run icon                  # régénère build\icon.ico
 ```
 
-`pnpm run editor:dev` sert l'éditeur en développement sur <http://127.0.0.1:5173> (Vite) ; il
-s'adresse à l'application, qui doit tourner en parallèle (`pnpm run dev` ou `pnpm start`) sur le port 8765.
+### Des modifications à la version publiée
 
-## Recette sur matériel
+1. Travaillez sur une branche et ouvrez une pull request vers `main` : le workflow `build` vérifie les types,
+   lance les tests et compile.
+2. À la fusion sur `main`, le workflow publie une Release `v0.2.<n>` (installateur, `.blockmap` et
+   `latest.yml`). Les applications installées la récupèrent d'elles-mêmes.
 
-À vérifier sur la vraie console (objectifs 1 à 7 de la spec) :
+## Licence
 
-- [ ] **1. Navigation** : chaque bouton rond configuré ouvre son tableau ; la LED du tableau actif est
-  allumée dans sa couleur, les autres sont atténuées (éteintes si le bouton est vide). Après un redémarrage
-  de l'application, le même tableau est actif.
-- [ ] **2. Lumières** : un appui sur une touche allume / éteint la lumière (vibration courte) ; l'état suit
-  Home Assistant. Une molette règle l'intensité de la lumière de la zone voisine ; appuyer sur la molette ou
-  toucher la zone l'allume / l'éteint. Sans confirmation de HA sous 3 s, la touche revient à l'état réel avec
-  une vibration d'erreur.
-- [ ] **3. Température** : température ambiante, consigne et mode affichés en grand ; la molette change la
-  consigne par pas de 0,5 °C (ou `target_temp_step`) dans les bornes ; les touches de mode changent le mode,
-  le mode actif est mis en évidence.
-- [ ] **4. Météo** : conditions actuelles (icône, température, ressenti, condition) et prévisions des jours
-  suivants (icône, max, min).
-- [ ] **5. Caméras** : l'image remplit tout l'écran (« Plein écran ») ou s'affiche entière avec des bandes
-  noires (« Image entière »), au rythme de l'intervalle réglé (1 image/s par défaut) ; le flux s'arrête quand
-  on quitte le tableau ; une caméra sans image affiche « image non disponible » sans bloquer ; une image
-  figée depuis 5 s passe en gris avec la LED rouge clignotante.
-- [ ] **6. Éditeur visuel** : <http://127.0.0.1:8765> (ou le raccourci) s'ouvre ; la Live virtuelle montre
-  l'aperçu de la console, qui suit les changements en direct ; changer le type, le nom ou la couleur d'un
-  bouton, placer une entité par glisser-déposer, modifier un libellé, régler l'intervalle et le cadrage d'une
-  caméra : la console change aussitôt ; un dépôt invalide est refusé avec une explication ; « Annuler »
-  revient en arrière ; le jeton n'est jamais réaffiché.
-- [ ] **7. Fiabilité** : démarre à l'ouverture de session sans fenêtre (tâche « Loupedeck HA ») ; se
-  reconnecte seule après avoir débranché / rebranché la console, redémarré Home Assistant ou coupé le
-  réseau ; quand HA est injoignable, les touches sont grisées avec « HA hors ligne » au lieu d'états périmés ;
-  après un plantage, l'application est relancée au bout de 5 s.
+[MIT](LICENSE).
