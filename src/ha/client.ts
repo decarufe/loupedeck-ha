@@ -340,6 +340,7 @@ export class HaClient implements HaPort {
         deviceClass: attrs.device_class ?? reg?.device_class ?? reg?.original_device_class ?? null,
         icon: attrs.icon ?? reg?.icon ?? null,
         unit: typeof attrs.unit_of_measurement === 'string' ? attrs.unit_of_measurement : null,
+        deviceId: reg?.device_id ?? null,
       }
     })
   }

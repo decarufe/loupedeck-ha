@@ -7,7 +7,7 @@ import type { FullView } from '../../src/views.js'
 import type { CameraDashboard } from '../../src/config/schema.js'
 
 function cfg(over: Partial<CameraDashboard> = {}): CameraDashboard {
-  return { type: 'camera', name: 'Porte', color: '#FF8800', entityId: 'camera.porte', source: 'ha-proxy', intervalMs: 1000, fit: 'cover', ...over }
+  return { type: 'camera', name: 'Porte', color: '#FF8800', entityId: 'camera.porte', source: 'ha-proxy', intervalMs: 1000, fit: 'cover', alert: { enabled: false, sensors: [] }, ...over }
 }
 const flush = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 const img = (n: number) => Buffer.from([n])

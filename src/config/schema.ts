@@ -45,7 +45,9 @@ export interface WeatherDashboard { type: 'weather'; name: string; color: string
 /** Cadrage de l'image caméra : `cover` remplit l'écran (bords rognés), `contain` montre l'image entière avec des bandes noires. */
 export type CameraFit = 'cover' | 'contain'
 export const CAMERA_FITS = ['cover', 'contain'] as const satisfies readonly CameraFit[]
-export interface CameraDashboard { type: 'camera'; name: string; color: string; entityId: string | null; source: 'ha-proxy'; intervalMs: number; fit: CameraFit }
+/** Alerte d'une page caméra : capteurs (`binary_sensor`) dont une détection ouvre la page et fait vibrer la console. */
+export interface CameraAlert { enabled: boolean; sensors: string[] }
+export interface CameraDashboard { type: 'camera'; name: string; color: string; entityId: string | null; source: 'ha-proxy'; intervalMs: number; fit: CameraFit; alert: CameraAlert }
 /** Fenêtres du graphique plein écran, en heures ; la molette haut droite passe de l'une à l'autre. */
 export const GRAPH_WINDOWS_H = [1, 3, 6, 12, 24, 72] as const
 export interface GraphDashboard { type: 'graph'; name: string; color: string; entityId: string | null; windowHours: number }
@@ -119,6 +121,8 @@ const camera = z.object({
   intervalMs: z.number().int().min(250).max(2000),
   // Absent d'une ancienne configuration : `cover` (comportement d'origine) appliqué au chargement.
   fit: z.enum(CAMERA_FITS).default('cover'),
+  // Absente d'une ancienne configuration : alerte désactivée.
+  alert: z.object({ enabled: z.boolean(), sensors: z.array(z.string().min(1)) }).default({ enabled: false, sensors: [] }),
 })
 const graph = z.object({
   type: z.literal('graph'),
@@ -190,7 +194,7 @@ export function emptyDashboard(type: DashboardType, index: number): DashboardCon
     case 'weather':
       return { type, name: NAMES.weather, color, entityId: null }
     case 'camera':
-      return { type, name: `${NAMES.camera} ${index + 1}`, color, entityId: null, source: 'ha-proxy', intervalMs: 1000, fit: 'cover' }
+      return { type, name: `${NAMES.camera} ${index + 1}`, color, entityId: null, source: 'ha-proxy', intervalMs: 1000, fit: 'cover', alert: { enabled: false, sensors: [] } }
     case 'graph':
       return { type, name: NAMES.graph, color, entityId: null, windowHours: 12 }
   }

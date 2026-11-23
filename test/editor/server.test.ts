@@ -193,6 +193,16 @@ describe('serveur de l’éditeur', () => {
     expect((await put(body(wrong))).statusCode).toBe(400)
   })
 
+  it('put_alert_sensor_placement_400', async () => {
+    await start()
+    ha.setEntity('light.salon', 'on', {})
+    const cfg = structuredClone(store.get())
+    ;(cfg.buttons[3] as CameraDashboard).alert = { enabled: true, sensors: ['light.salon'] }
+    const res = await put(body(cfg))
+    expect(res.statusCode).toBe(400)
+    expect(res.json().issues[0]).toContain('Bouton 4, alerte (light.salon)')
+  })
+
   describe('export et import des réglages', () => {
     const importFile = (payload: unknown) => request('POST', '/api/config/import', { payload, headers: editorHeaders() })
     const exported = async () => (await get('/api/config/export')).json()
