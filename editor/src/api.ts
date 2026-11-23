@@ -53,6 +53,9 @@ export const getEntities = () => request<EntityInfo[]>('/api/entities')
 export const getStatus = () => request<Status>('/api/status')
 export const pageCommand = (button: number, command: 'refresh' | 'reload') =>
   request<{ ok: true }>(`/api/pages/${button}/command`, { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify({ command }) })
+/** Mode Essayer : geste de la Live virtuelle transmis à la page (pilote la vraie maison). */
+export const pageInput = (button: number, event: object) =>
+  request<{ ok: true }>(`/api/pages/${button}/input`, { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify(event) })
 export const previewUrl = (button: number, version: number) => `/api/preview/${button}.png?v=${version}`
 
 /**

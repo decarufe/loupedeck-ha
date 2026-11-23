@@ -5,6 +5,7 @@ import {
 } from '@shared/config/schema'
 import { canPlace, type EntityInfo, type SlotKind } from '@shared/shared/placement'
 import { changeKind, fitsSlot, newTile, placeOnTile, TILE_KIND_LABELS, type SlotType } from '@shared/shared/tiles'
+import type { InputEvent } from '@shared/device/input'
 import * as api from './api'
 import type { LiveMessage, PublicConfig, Status } from './api'
 
@@ -32,6 +33,8 @@ export interface EditorState {
   drag: DragSource | null
   dragOver: string | null
   dragSwap: boolean
+  /** `edit` : cliquer règle, glisser place. `try` : les gestes pilotent la page comme sur la console. */
+  mode: 'edit' | 'try'
   /** Emplacement sélectionné pour l'édition du libellé et de l'icône. */
   selectedSlot: SlotTarget | null
   status: Status | null
@@ -42,7 +45,7 @@ export interface EditorState {
 }
 
 const initial = (): EditorState => ({
-  config: null, entities: [], entitiesUnavailable: false, pendingEntity: null, pendingKind: null, drag: null, dragOver: null, dragSwap: false, selectedSlot: null,
+  config: null, entities: [], entitiesUnavailable: false, pendingEntity: null, pendingKind: null, drag: null, dragOver: null, dragSwap: false, mode: 'edit', selectedSlot: null,
   status: null, selectedButton: 0, previewVersion: 0, activeButton: -1, error: null,
 })
 
@@ -322,6 +325,112 @@ export async function pageCommand(index: number, command: 'refresh' | 'reload'):
     fail(e)
     return false
   }
+}
+
+// ---------- glisser : ce qui est permis, et ce qui se passera ----------
+
+export type DropVerdict = { ok: true; how: string } | { ok: false; why: string }
+
+const SLOT_WHERE: Record<SlotType, string> = { key: 'les touches', strip: 'les bandes latérales (molettes)' }
+
+export function targetFromId(id: string): SlotTarget | null {
+  const k = /^key:(\d+)$/.exec(id)
+  if (k) return { kind: 'key', index: Number(k[1]) }
+  const s = /^strip:(\w+)$/.exec(id)
+  return s ? { kind: 'strip', knob: s[1] as KnobId } : null
+}
+
+/** Verdict d'un dépôt de `source` sur la cible `id` (`key:3`, `strip:knobTL`, `round:2`, `trash`), pour surligner et étiqueter. */
+export function canDropOn(source: DragSource, id: string): DropVerdict {
+  if (id === 'trash') return source.type === 'key' || source.type === 'strip' ? { ok: true, how: 'Retirer la touche' } : { ok: false, why: '' }
+  if (id.startsWith('round:')) {
+    if (source.type !== 'round') return { ok: false, why: 'Déposez sur une touche ou une bande' }
+    const to = Number(id.slice(6))
+    if (to === source.index) return { ok: false, why: '' }
+    return { ok: true, how: state.config?.buttons[to] ? 'Placer la page ici (les autres se décalent) · Maj : échanger' : 'Déplacer la page sur ce bouton' }
+  }
+  if (source.type === 'round') return { ok: false, why: '' }
+  const t = targetFromId(id)
+  const page = state.config?.buttons[state.selectedButton]
+  if (!t || page?.type !== 'custom') return { ok: false, why: 'Cette page n’a pas de touches' }
+  const st = slotType(t)
+  const current = tileAt(t)
+  if (source.type === 'kind') {
+    const k = TILE_KIND_LABELS[source.kind]
+    return fitsSlot(source.kind, st) ? { ok: true, how: `Créer : ${k.name}` } : { ok: false, why: `${k.name} : seulement sur ${source.kind === 'dimmer' ? SLOT_WHERE.strip : SLOT_WHERE.key}` }
+  }
+  if (source.type === 'entity') {
+    const info = state.entities.find((e) => e.entityId === source.entityId)
+    if (!info) return { ok: false, why: 'Entité inconnue' }
+    const r = placeOnTile(info, st, current)
+    if (!r.ok) return { ok: false, why: r.reason }
+    return { ok: true, how: current && current.kind === r.tile.kind ? 'Remplacer l’entité (format gardé)' : `Créer : ${TILE_KIND_LABELS[r.tile.kind].name}` }
+  }
+  const from: SlotTarget = source.type === 'key' ? { kind: 'key', index: source.index } : { kind: 'strip', knob: source.knob }
+  if (slotId(from) === id) return { ok: false, why: '' }
+  const a = tileAt(from)
+  if (!a) return { ok: false, why: '' }
+  if (!fitsSlot(a.kind, st)) return { ok: false, why: `${TILE_KIND_LABELS[a.kind].name} ne va pas sur ${SLOT_WHERE[st]}` }
+  if (from.kind === 'key' && t.kind === 'key') {
+    return { ok: true, how: current ? 'Placer ici (les suivantes se décalent) · Maj : échanger · Ctrl : copier' : 'Déplacer (Ctrl : copier)' }
+  }
+  if (current && !fitsSlot(current.kind, slotType(from))) return { ok: false, why: `Échange impossible : ${TILE_KIND_LABELS[current.kind].name} ne va pas sur ${SLOT_WHERE[slotType(from)]}` }
+  return { ok: true, how: current ? 'Échanger (Ctrl : copier par-dessus)' : 'Déplacer (Ctrl : copier)' }
+}
+
+/** Nom court de ce qu'on glisse, pour l'étiquette qui suit le pointeur. */
+export function dragLabel(source: DragSource): string {
+  switch (source.type) {
+    case 'kind': return TILE_KIND_LABELS[source.kind].name
+    case 'entity': return state.entities.find((e) => e.entityId === source.entityId)?.name ?? source.entityId
+    case 'round': return `Bouton rond ${source.index + 1} · ${state.config?.buttons[source.index]?.name ?? ''}`
+    default: {
+      const t: SlotTarget = source.type === 'key' ? { kind: 'key', index: source.index } : { kind: 'strip', knob: source.knob }
+      const tile = tileAt(t)
+      return `${slotName(t)}${tile ? ` · ${TILE_KIND_LABELS[tile.kind].name}` : ''}`
+    }
+  }
+}
+
+// ---------- mode Essayer ----------
+
+/** Envoie un geste à la page sélectionnée ; l'aperçu se recharge peu après (la maison a pu changer). */
+export async function tryInput(e: InputEvent): Promise<void> {
+  try {
+    await api.pageInput(state.selectedButton, e)
+    state.error = null
+    setTimeout(() => { state.previewVersion++ }, 400)
+  } catch (err) { fail(err) }
+}
+
+// ---------- entités : icône et valeur affichées dans la palette ----------
+
+export function entityIcon(e: EntityInfo): string {
+  if (e.icon) return e.icon
+  switch (e.domain) {
+    case 'light': return 'mdi:lightbulb'
+    case 'switch': return 'mdi:toggle-switch'
+    case 'input_boolean': return 'mdi:toggle-switch-outline'
+    case 'fan': return 'mdi:fan'
+    case 'scene': return 'mdi:palette'
+    case 'script': return 'mdi:play'
+    case 'binary_sensor': return e.deviceClass === 'motion' ? 'mdi:motion-sensor' : e.deviceClass === 'window' ? 'mdi:window-closed-variant' : 'mdi:door'
+    case 'sensor': return e.deviceClass === 'temperature' ? 'mdi:thermometer' : e.deviceClass === 'power' ? 'mdi:flash' : 'mdi:gauge'
+    case 'climate': return 'mdi:thermostat'
+    case 'weather': return 'mdi:weather-partly-cloudy'
+    case 'camera': return 'mdi:cctv'
+    default: return 'mdi:home'
+  }
+}
+
+export function entityValue(e: EntityInfo): string {
+  if (e.state === 'unavailable' || e.state === 'unknown') return 'indisponible'
+  const n = Number.parseFloat(e.state)
+  if (e.domain === 'sensor' && Number.isFinite(n)) return `${new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 1 }).format(n)}${e.unit ? ` ${e.unit}` : ''}`
+  if (['light', 'switch', 'input_boolean', 'fan'].includes(e.domain)) return e.state === 'on' ? 'allumé' : 'éteint'
+  if (e.domain === 'binary_sensor') return e.state === 'on' ? 'actif' : 'inactif'
+  if (e.domain === 'scene' || e.domain === 'script') return ''
+  return e.state
 }
 
 export function undo(): Promise<void> {

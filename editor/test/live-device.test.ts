@@ -11,7 +11,7 @@ describe('LiveDevice', () => {
     const w = await mountEditor()
     const rounds = w.findAll('.round-button')
     expect(rounds).toHaveLength(8)
-    expect(rounds[0]!.attributes('style')).toContain('background-color: rgb(38, 166, 154)')
+    expect(rounds[0]!.get('.led').attributes('style')).toContain('background: rgb(38, 166, 154)')
     expect(rounds[7]!.classes()).toContain('empty')
     expect(rounds[2]!.attributes('aria-label')).toBe('Bouton rond 3 — Météo')
   })

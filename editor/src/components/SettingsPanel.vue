@@ -81,14 +81,16 @@ function setBrightness(e: Event) {
 </template>
 
 <style scoped>
-.settings { display: flex; flex-direction: column; gap: 0.6rem; min-width: 18rem; max-width: 24rem; background: #1c1c1c; padding: 1rem; border-radius: 8px; }
-h2 { font-size: 1.05rem; margin: 0; }
-p { margin: 0; font-size: 0.85rem; }
-label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-label.inline { flex-direction: row; align-items: center; gap: 0.5rem; }
-input[type='text'], input[type='password'] { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #555; border-radius: 6px; padding: 0.35rem; }
-.insecure-warning { padding: 0.5rem; background: #4a3d12; border: 1px solid #b8962e; border-radius: 6px; }
-.token-required { color: #ff8a80; }
-.token-saved { color: #81c784; }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings { display: flex; flex-direction: column; gap: 10px; }
+h2 { font-size: 1.05rem; font-weight: 600; padding-right: 2rem; }
+p { margin: 0; font-size: 0.82rem; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--muted); }
+label input { color: var(--fg); }
+label.inline { flex-direction: row; align-items: center; gap: 8px; color: var(--fg); }
+.ha-status, .device-status { color: var(--muted); }
+.insecure-warning { padding: 8px 10px; background: #3a3012; border: 1px solid #6b5a1c; border-radius: 8px; }
+.token-required { color: #f3b1b1; }
+.token-saved { color: var(--ok); }
+.save-settings { align-self: flex-start; }
+input[type='range'] { width: 100%; padding: 0; accent-color: var(--accent); }
 </style>

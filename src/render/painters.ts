@@ -91,6 +91,10 @@ function paintEmptyLabel(ctx: SKRSContext2D, r: Rect, label: string, compact: bo
   paintWrapped(ctx, r, label, compact ? 10 : 12, '#9E9E9E')
 }
 
+/** Écart entre les tuiles et rayon de leurs coins, comme dans l'Atelier. */
+const TILE_GAP = 2
+const TILE_RADIUS = 6
+
 function paintTile(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): void {
   if (t.state === 'empty') {
     ctx.fillStyle = COLORS.empty
@@ -98,6 +102,21 @@ function paintTile(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): 
     if (t.label) paintEmptyLabel(ctx, r, t.label, compact)
     return
   }
+  // Fond noir entre les tuiles, puis la tuile arrondie ; tout son contenu est découpé à sa forme.
+  ctx.fillStyle = COLORS.empty
+  ctx.fillRect(r.x, r.y, r.width, r.height)
+  ctx.save()
+  ctx.beginPath()
+  ctx.roundRect(r.x + TILE_GAP, r.y + TILE_GAP, r.width - 2 * TILE_GAP, r.height - 2 * TILE_GAP, TILE_RADIUS)
+  ctx.clip()
+  try {
+    paintTileBody(ctx, r, t, compact)
+  } finally {
+    ctx.restore()
+  }
+}
+
+function paintTileBody(ctx: SKRSContext2D, r: Rect, t: TileView, compact: boolean): void {
   const dim = t.state === 'missing' || t.state === 'unavailable'
   const bg = t.state === 'on' ? t.accent : dim ? COLORS.unavailable : t.tint ? mix(t.tint, COLORS.off, 0.28) : COLORS.off
   ctx.fillStyle = bg

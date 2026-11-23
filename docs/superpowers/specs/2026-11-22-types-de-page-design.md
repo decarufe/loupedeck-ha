@@ -76,3 +76,20 @@ Ce document révise plusieurs points de `2026-11-20-loupedeck-home-assistant-des
   Pendant le glisser, l'aperçu montre le résultat : les touches (morceaux de l'aperçu) et les boutons ronds glissent à leur place provisoire.
 - Commandes de page (POST `/api/pages/:i/command`) : Météo « Actualiser » (`update_entity`) ; Caméra « Forcer une image » (nouvelle image fixe
   pour l'aperçu) et « Recharger l'intégration » (`reload_config_entry`). Ce sont les seules actions de l'éditeur qui touchent Home Assistant.
+
+## 5. Interface de l'éditeur (reprise de l'Atelier, 2026-11-23)
+
+- Thème sombre de l'Atelier : polices locales seulement (Inter, Space Grotesk si installées, sinon Segoe UI) — l'éditeur ne contacte aucun service externe.
+- En-tête : titre « Atelier Loupedeck », état de Home Assistant et de la console, choix du mode **Éditer / Essayer**, **Annuler**, **⚙ Réglages**.
+  Les réglages (adresse, jeton, luminosité) s'ouvrent dans un panneau par-dessus l'atelier. Pas de « Rétablir » ni de « Réinitialiser » (choix de l'utilisateur).
+- Atelier en trois colonnes (disposition A seulement) : palette · console · réglages ; une seule colonne sur un écran étroit.
+- Palette : types de touche avec icône et description ; entités avec icône, identifiant, pièce et valeur actuelle.
+- Console : molettes, boutons ronds avec leur LED, nom et couleur de la page ; touches de l'écran arrondies et séparées (aussi sur la vraie console).
+- Réglages de touche : aperçu agrandi de la touche, ce qu'elle fait sur la console, pastilles de couleur, grille d'icônes (et champ pour une autre icône `mdi:`).
+  Une touche sélectionnée remplace les réglages de la page dans le panneau ; « ← Page » ou Échap y revient.
+- Pendant un glisser : cibles valides en vert, les autres atténuées, étiquette qui suit le pointeur avec ce qui va se passer ou pourquoi c'est refusé.
+- Raccourcis : Ctrl+Z annule, Échap désélectionne (ou ferme les réglages), Suppr retire la touche sélectionnée.
+- **Mode Essayer** (décision de l'utilisateur, révise l'objectif « l'éditeur ne pilote pas la maison ») : toucher une touche, une zone ou l'écran,
+  tourner une molette (molette de souris ou glisser vertical) ou l'appuyer envoie le geste à la page par `POST /api/pages/:i/input`,
+  exactement comme la console : **la vraie maison est pilotée**. Le serveur valide chaque geste champ par champ. L'appui long est le temps réel
+  entre l'appui et le relâchement. En mode Éditer, aucun geste n'est envoyé.

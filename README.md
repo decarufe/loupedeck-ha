@@ -52,7 +52,7 @@ Si l'application plante, elle est relancée automatiquement après 5 s ; l'icôn
 La configuration se fait dans **l'éditeur**, une page web locale servie par l'application : menu de l'icône
 → **Ouvrir la configuration**.
 
-- **Réglages** : adresse Home Assistant (`http://…` ou `https://…`), jeton, certificat auto-signé,
+- **⚙ Réglages** (en haut à droite) : adresse Home Assistant (`http://…` ou `https://…`), jeton, certificat auto-signé,
   luminosité de la console. Le jeton saisi n'est jamais réaffiché ; changer d'adresse demande de le saisir
   à nouveau.
 - **Pages** : cliquez sur un bouton rond de la Live virtuelle. Une page vide propose cinq types de contenu :
@@ -71,6 +71,9 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
   (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires). Sur la
   console, la tuile haut gauche compte le temps depuis la dernière image (vert, ambre après 10 s, rouge
   après 30 s) ; appui court : forcer une image, appui long : recharger l'intégration de la caméra.
+- **Mode Essayer** (en haut) : toucher les touches et tourner les molettes de la Live virtuelle pilote la vraie
+  maison, comme la console. En mode **Éditer**, cliquer règle et glisser place.
+- Raccourcis : **Ctrl+Z** annule, **Échap** désélectionne, **Suppr** retire la touche sélectionnée.
 - **Annuler** revient à la configuration précédente. Chaque modification est enregistrée et appliquée à la
   console aussitôt ; l'aperçu suit la console en direct.
 

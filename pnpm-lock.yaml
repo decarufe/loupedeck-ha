@@ -227,6 +227,9 @@ importers:
 
   editor:
     dependencies:
+      '@mdi/js':
+        specifier: ^7.4.47
+        version: 7.4.47
       vue:
         specifier: ^3.5.45
         version: 3.5.45(typescript@7.0.2)

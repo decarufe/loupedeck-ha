@@ -143,13 +143,13 @@ function removeSensor(n: number) {
 </template>
 
 <style scoped>
-.dashboard-entities { display: flex; flex-direction: column; gap: 0.6rem; }
-h3 { font-size: 0.95rem; margin: 0; }
-.sensors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
-.sensor-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-.field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-.field input, .field select { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #555; border-radius: 6px; padding: 0.35rem; }
-.camera-still { width: 100%; border-radius: 4px; background: #000; }
-.commands { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-.hint { color: #aaa; margin: 0; font-size: 0.82rem; line-height: 1.4; }
+.dashboard-entities { display: flex; flex-direction: column; gap: 10px; }
+h3 { font-size: 0.86rem; font-weight: 600; }
+.sensors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sensor-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.82rem; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--muted); }
+.field input, .field select { color: var(--fg); }
+.camera-still { width: 100%; border-radius: 6px; background: #000; border: 1px solid var(--line); }
+.commands { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.hint { font-size: 0.78rem; color: var(--muted); margin: 0; line-height: 1.45; }
 </style>

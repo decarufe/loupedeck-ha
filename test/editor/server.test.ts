@@ -456,4 +456,23 @@ describe('serveur de l’éditeur', () => {
     expect(b?.type).toBe('custom')
     expect(b?.type === 'custom' && b.keys[0]).toEqual({ kind: 'toggle', entityId: 'switch.cafe' })
   })
+
+  it('try_mode_input_reaches_the_page', async () => {
+    await start()
+    ha.setEntity('switch.cafe', 'off', { friendly_name: 'Café' })
+    const cfg = structuredClone(store.get())
+    const b = cfg.buttons[0]
+    if (b?.type === 'custom') b.keys[1] = { kind: 'toggle', entityId: 'switch.cafe' }
+    expect((await put(body(cfg))).statusCode).toBe(200)
+    nav!.applyConfig(store.get()) // dans l'application, l'écouteur de la configuration le fait
+    const input = (i: number, payload: unknown) => request('POST', `/api/pages/${i}/input`, { payload, headers: { ...editorHeaders(), 'content-type': 'application/json' } })
+    expect((await input(0, { type: 'tap', target: { kind: 'key', index: 1 } })).statusCode).toBe(200)
+    expect(ha.calls).toEqual([{ domain: 'switch', service: 'toggle', data: undefined, target: { entity_id: 'switch.cafe' } }])
+    expect((await input(0, { type: 'tap', target: { kind: 'key', index: 12 } })).statusCode).toBe(400)
+    expect((await input(0, { type: 'knobTurn', knob: 'knobXX', delta: 1 })).statusCode).toBe(400)
+    expect((await input(0, { type: 'button', id: 2 })).statusCode).toBe(400)
+    expect((await input(7, { type: 'knobPress', knob: 'knobTL' })).statusCode).toBe(404)
+    expect((await request('POST', '/api/pages/0/input', { payload: { type: 'tap', target: { kind: 'key', index: 1 } }, headers: { ...hostHeader(), 'content-type': 'application/json' } })).statusCode).toBe(403)
+    expect(ha.calls).toHaveLength(1)
+  })
 })

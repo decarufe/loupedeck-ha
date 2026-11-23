@@ -39,7 +39,7 @@ describe('EntityPalette', () => {
     await w.get('select.area-filter').setValue('')
 
     const ghost = rows().find((r) => r.text().includes('light.ghost'))!
-    expect(ghost.get('.badge').text()).toBe('Indisponible')
+    expect(ghost.get('.badge').text()).toBe('indisponible')
     expect(rows().filter((r) => r.find('.badge').exists())).toHaveLength(1)
   })
 

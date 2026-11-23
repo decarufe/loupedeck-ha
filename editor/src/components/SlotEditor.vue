@@ -1,14 +1,27 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { CLOCK_FORMATS, TILE_GRAPH_PERIODS, TILE_KINDS, type ClockFormat, type Tile, type TileKind } from '@shared/config/schema'
+import { CLOCK_FORMATS, TILE_GRAPH_PERIODS, TILE_KINDS, KNOB_IDS, type ClockFormat, type Tile, type TileKind } from '@shared/config/schema'
+import { keyRect, stripZoneRect, type Rect } from '@shared/device/regions'
 import type { SlotKind } from '@shared/shared/placement'
 import { fitsSlot, TILE_KIND_LABELS, TILE_NEEDS } from '@shared/shared/tiles'
+import { previewUrl } from '../api'
 import { clearSlot, placeKind, setTileEntity, setTileKind, slotName, state, tileAt, updateTile } from '../store'
 import EntityPicker from './EntityPicker.vue'
+import MdiIcon from './MdiIcon.vue'
 
 const CLOCK_LABELS: Record<ClockFormat, string> = { 'time-date': 'Heure + jour et date', time: 'Heure seule', 'time-seconds': 'Heure avec secondes', date: 'Date seule' }
 const TOKENS = ['{valeur}', '{unité}', '{nom}']
 const SWATCHES = ['#FFB300', '#FF7043', '#EF5350', '#AB47BC', '#5C6BC0', '#4FC3F7', '#26A69A', '#9CCC65']
+const ICON_CHOICES = [
+  'mdi:lightbulb', 'mdi:toggle-switch', 'mdi:play', 'mdi:star', 'mdi:weather-night', 'mdi:door', 'mdi:window-closed-variant', 'mdi:motion-sensor',
+  'mdi:garage', 'mdi:thermometer', 'mdi:chip', 'mdi:memory', 'mdi:flash', 'mdi:coffee', 'mdi:white-balance-sunny', 'mdi:home',
+]
+const KNOB_NAMES: Record<string, string> = {
+  knobTL: 'molette haut gauche', knobCL: 'molette milieu gauche', knobBL: 'molette bas gauche',
+  knobTR: 'molette haut droite', knobCR: 'molette milieu droite', knobBR: 'molette bas droite',
+}
+const W = 480
+const H = 270
 
 const target = computed(() => state.selectedSlot)
 const tile = computed<Tile | null>(() => (target.value ? tileAt(target.value) : null))
@@ -17,6 +30,42 @@ const allowed = computed(() => TILE_KINDS.filter((k) => fitsSlot(k, slotType.val
 const entityId = computed(() => (tile.value && tile.value.kind !== 'clock' ? tile.value.entityId : null))
 const page = computed(() => state.config?.buttons[state.selectedButton])
 const pageColor = computed(() => (page.value ? page.value.color : '#26A69A'))
+
+/** Aperçu agrandi : le morceau de l'aperçu de la console qui correspond à l'emplacement. */
+const rect = computed<Rect | null>(() => {
+  const t = target.value
+  if (!t) return null
+  if (t.kind === 'key') return keyRect(t.index)
+  const n = KNOB_IDS.indexOf(t.knob)
+  return stripZoneRect(n < 3 ? 'left' : 'right', (n % 3) as 0 | 1 | 2)
+})
+const previewStyle = computed(() => {
+  const r = rect.value
+  if (!r) return {}
+  return {
+    backgroundImage: `url(${previewUrl(state.selectedButton, state.previewVersion)})`,
+    backgroundSize: `${(W / r.width) * 100}% ${(H / r.height) * 100}%`,
+    backgroundPosition: `${(r.x / (W - r.width)) * 100}% ${(r.y / (H - r.height)) * 100}%`,
+  }
+})
+
+/** Ce que fait la touche sur la console. */
+const behaviour = computed(() => {
+  const t = tile.value
+  if (!t) return []
+  switch (t.kind) {
+    case 'toggle': return ['Appui : allume ou éteint']
+    case 'action': return [t.confirm ? 'Appui long (1 s) : lance l’action' : 'Appui : lance l’action', 'Vibration courte de confirmation']
+    case 'state': return ['Lecture seule', 'Change de texte et de couleur en direct']
+    case 'value': return ['Lecture seule, mise à jour en direct']
+    case 'graph': return ['Lecture seule', `Courbe sur ${t.period}`]
+    case 'clock': return ['Lecture seule, heure du PC']
+    case 'dimmer': {
+      const knob = target.value?.kind === 'strip' ? KNOB_NAMES[target.value.knob] : 'molette'
+      return [`Molette (${knob}) : intensité ±5 %`, 'Appui sur la molette ou la zone : allume ou éteint']
+    }
+  }
+})
 
 const patch = (p: Record<string, unknown>) => { if (target.value) void updateTile(target.value, p) }
 function commit(field: 'label' | 'icon' | 'template', e: Event) {
@@ -43,12 +92,16 @@ const kindChange = (e: Event) => { if (target.value) void setTileKind(target.val
 
 <template>
   <section v-if="tile && target" class="slot-editor" :aria-label="`Emplacement : ${slotName(target)}`">
-    <header class="head">
-      <h3>{{ slotName(target) }}</h3>
+    <div class="ins-head">
+      <h2>{{ slotName(target) }}</h2>
       <button type="button" class="slot-remove danger" @click="clearSlot(target)">Retirer</button>
-    </header>
-    <label>
-      Type de touche
+    </div>
+    <div class="preview-box">
+      <div class="preview-tile" :class="{ 'strip-shape': target.kind === 'strip' }" :style="previewStyle" role="img" :aria-label="`Aperçu de ${slotName(target)}`" />
+      <ul class="behaviour"><li v-for="b in behaviour" :key="b">{{ b }}</li></ul>
+    </div>
+    <label class="field">
+      <span>Type de touche</span>
       <select class="tile-kind" :value="tile.kind" @change="kindChange">
         <option v-for="k in allowed" :key="k" :value="k">{{ TILE_KIND_LABELS[k].name }}</option>
       </select>
@@ -57,19 +110,19 @@ const kindChange = (e: Event) => { if (target.value) void setTileKind(target.val
       v-if="tile.kind !== 'clock'" class="tile-entity" :kind="tile.kind as SlotKind" :model-value="entityId"
       :label="`Entité (${TILE_NEEDS[tile.kind]})`" @update:model-value="(v) => setTileEntity(target!, v)"
     />
-    <label>
-      Libellé
+    <label class="field">
+      <span>Libellé</span>
       <input class="slot-label" type="text" :value="tile.label ?? ''" placeholder="Nom affiché sur la touche" @blur="commit('label', $event)" @keydown.enter="blurOnEnter" />
     </label>
 
     <template v-if="tile.kind === 'value'">
-      <label>
-        Format affiché
+      <label class="field">
+        <span>Format affiché</span>
         <input class="tile-template" type="text" :value="tile.template" @blur="commit('template', $event)" @keydown.enter="blurOnEnter" />
       </label>
       <div class="tokens"><button v-for="t in TOKENS" :key="t" type="button" class="token" @click="insertToken(t)">{{ t }}</button></div>
-      <label>
-        Décimales
+      <label class="field">
+        <span>Décimales</span>
         <select class="tile-decimals" :value="tile.decimals" @change="patch({ decimals: Number(($event.target as HTMLSelectElement).value) })">
           <option v-for="n in [0, 1, 2, 3]" :key="n" :value="n">{{ n }}</option>
         </select>
@@ -78,14 +131,14 @@ const kindChange = (e: Event) => { if (target.value) void setTileKind(target.val
 
     <template v-if="tile.kind === 'graph'">
       <div class="row2">
-        <label>
-          Période
+        <label class="field">
+          <span>Période</span>
           <select class="tile-period" :value="tile.period" @change="patch({ period: ($event.target as HTMLSelectElement).value })">
             <option v-for="p in TILE_GRAPH_PERIODS" :key="p" :value="p">{{ p }}</option>
           </select>
         </label>
-        <label>
-          Style
+        <label class="field">
+          <span>Style</span>
           <select class="tile-style" :value="tile.style" @change="patch({ style: ($event.target as HTMLSelectElement).value })">
             <option value="area">Aire</option>
             <option value="line">Ligne</option>
@@ -93,8 +146,8 @@ const kindChange = (e: Event) => { if (target.value) void setTileKind(target.val
         </label>
       </div>
       <div class="row2">
-        <label>
-          Décimales
+        <label class="field">
+          <span>Décimales</span>
           <select class="tile-decimals" :value="tile.decimals" @change="patch({ decimals: Number(($event.target as HTMLSelectElement).value) })">
             <option v-for="n in [0, 1, 2, 3]" :key="n" :value="n">{{ n }}</option>
           </select>
@@ -106,20 +159,22 @@ const kindChange = (e: Event) => { if (target.value) void setTileKind(target.val
       </div>
     </template>
 
-    <label v-if="tile.kind === 'clock'">
-      Format
+    <label v-if="tile.kind === 'clock'" class="field">
+      <span>Format</span>
       <select class="tile-clock" :value="tile.format" @change="patch({ format: ($event.target as HTMLSelectElement).value })">
         <option v-for="f in CLOCK_FORMATS" :key="f" :value="f">{{ CLOCK_LABELS[f] }}</option>
       </select>
     </label>
 
-    <div v-if="tile.kind === 'state'" class="looks">
+    <div v-if="tile.kind === 'state'" class="field">
       <span>Selon l’état</span>
-      <template v-for="w in (['on', 'off'] as const)" :key="w">
-        <span class="look-name">{{ w === 'on' ? 'Actif' : 'Inactif' }}</span>
-        <input :class="`look-text-${w}`" type="text" :value="tile[w].text" :aria-label="`Texte si ${w === 'on' ? 'actif' : 'inactif'}`" @blur="setLook(w, 'text', $event)" @keydown.enter="blurOnEnter" />
-        <input :class="`look-color-${w}`" type="color" :value="tile[w].color.toLowerCase()" :aria-label="`Couleur si ${w === 'on' ? 'actif' : 'inactif'}`" @change="setLook(w, 'color', $event)" />
-      </template>
+      <div class="map">
+        <template v-for="w in (['on', 'off'] as const)" :key="w">
+          <span>{{ w === 'on' ? 'Actif' : 'Inactif' }}</span>
+          <input :class="`look-text-${w}`" type="text" :value="tile[w].text" :aria-label="`Texte si ${w === 'on' ? 'actif' : 'inactif'}`" @blur="setLook(w, 'text', $event)" @keydown.enter="blurOnEnter" />
+          <input :class="`look-color-${w}`" type="color" :value="tile[w].color.toLowerCase()" :aria-label="`Couleur si ${w === 'on' ? 'actif' : 'inactif'}`" @change="setLook(w, 'color', $event)" />
+        </template>
+      </div>
     </div>
 
     <label v-if="tile.kind === 'action'" class="check">
@@ -137,37 +192,49 @@ const kindChange = (e: Event) => { if (target.value) void setTileKind(target.val
         />
       </div>
     </div>
-    <label v-if="tile.kind !== 'clock' && tile.kind !== 'state'">
-      Icône
-      <input class="slot-icon" type="text" :value="tile.icon ?? ''" placeholder="ex. mdi:lamp (vide : automatique)" @blur="commit('icon', $event)" @keydown.enter="blurOnEnter" />
-    </label>
+    <div v-if="tile.kind !== 'clock' && tile.kind !== 'state'" class="field">
+      <span>Icône</span>
+      <div class="icons">
+        <button type="button" class="icon-choice" :aria-pressed="!tile.icon" title="Automatique" @click="patch({ icon: '' })">auto</button>
+        <button
+          v-for="n in ICON_CHOICES" :key="n" type="button" class="icon-choice" :title="n" :aria-label="`Icône ${n}`"
+          :aria-pressed="tile.icon === n" @click="patch({ icon: n })"
+        ><MdiIcon :name="n" /></button>
+      </div>
+      <input class="slot-icon" type="text" :value="tile.icon ?? ''" placeholder="Autre icône : mdi:lamp" aria-label="Autre icône Material Design" @blur="commit('icon', $event)" @keydown.enter="blurOnEnter" />
+    </div>
   </section>
   <section v-else-if="target && page?.type === 'custom'" class="slot-editor empty">
-    <h3>{{ slotName(target) }}</h3>
-    <p class="hint">Emplacement vide. Glissez un type de touche ou une entité, ou choisissez :</p>
+    <div class="ins-head"><h2>{{ slotName(target) }}</h2></div>
+    <p class="note">Emplacement vide. Glissez un type de touche ou une entité, ou choisissez :</p>
     <div class="kinds">
-      <button v-for="k in allowed" :key="k" type="button" class="new-kind" :data-kind="k" @click="placeKind(target!, k)">{{ TILE_KIND_LABELS[k].name }}</button>
+      <button v-for="k in allowed" :key="k" type="button" class="new-kind" :data-kind="k" @click="placeKind(target!, k)">
+        <MdiIcon :name="TILE_KIND_LABELS[k].icon" />{{ TILE_KIND_LABELS[k].name }}
+      </button>
     </div>
   </section>
 </template>
 
 <style scoped>
-.slot-editor { display: flex; flex-direction: column; gap: 0.6rem; border-top: 1px solid #333; padding-top: 0.8rem; }
-.head { display: flex; justify-content: space-between; align-items: center; }
-h3 { font-size: 0.95rem; margin: 0; }
-label, .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-label.check { flex-direction: row; align-items: center; gap: 0.4rem; }
-input[type='text'], select { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #555; border-radius: 6px; padding: 0.35rem; }
-input[type='color'] { width: 2.4rem; height: 1.8rem; padding: 0; background: none; border: 1px solid #555; }
-.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; align-items: end; }
-.tokens, .kinds { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.token { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; padding: 0.1rem 0.4rem; }
-.looks { display: grid; grid-template-columns: auto 1fr auto; gap: 0.35rem; align-items: center; font-size: 0.9rem; }
-.looks > span:first-child { grid-column: 1 / -1; }
-.swatches { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.swatch { width: 1.7rem; height: 1.7rem; border-radius: 50%; padding: 0; border: 2px solid transparent; }
-.swatch.auto { width: auto; border-radius: 0.85rem; padding: 0 0.5rem; font-size: 0.75rem; color: #000; }
-.swatch[aria-pressed='true'] { border-color: #fff; }
-.danger { color: #f3b1b1; border-color: #5a2a2a; }
-.hint { color: #aaa; margin: 0; font-size: 0.85rem; }
+.slot-editor { display: flex; flex-direction: column; gap: 12px; }
+.ins-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ins-head h2 { font-size: 0.95rem; }
+.preview-box { display: flex; gap: 12px; align-items: center; }
+.preview-tile { width: 120px; aspect-ratio: 1; flex: none; border-radius: 8%; background-color: #000; background-repeat: no-repeat; border: 1px solid var(--line); }
+.preview-tile.strip-shape { width: 80px; aspect-ratio: 60 / 90; }
+.behaviour { font-size: 0.8rem; color: var(--muted); line-height: 1.5; margin: 0; padding-left: 16px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+.tokens { display: flex; flex-wrap: wrap; gap: 4px; }
+.token { font-family: ui-monospace, Consolas, monospace; font-size: 0.75rem; padding: 2px 6px; }
+.map { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; font-size: 0.8rem; color: var(--fg); }
+.map input[type='color'] { width: 34px; height: 30px; padding: 2px; }
+.swatch.auto { width: auto; border-radius: 13px; padding: 0 8px; font-size: 0.72rem; color: #000; }
+.icons { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.icon-choice { padding: 4px; aspect-ratio: 1; display: grid; place-items: center; font-size: 0.68rem; }
+.icon-choice .mdi { width: 18px; height: 18px; }
+.icon-choice[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-bg); }
+.kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.new-kind { display: flex; align-items: center; gap: 6px; text-align: left; }
+.new-kind .mdi { width: 18px; height: 18px; flex: none; }
 </style>
