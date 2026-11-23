@@ -1,6 +1,9 @@
 {
   "name": "loupedeck-ha",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Loupedeck Live comme télécommande Home Assistant",
+  "author": "decarufe",
+  "main": "dist/shell/main.js",
   "private": true,
   "license": "MIT",
   "repository": "github:decarufe/loupedeck-ha",
@@ -15,12 +18,16 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run && pnpm --dir editor run test",
-    "spike": "tsx scripts/spike-throughput.ts"
+    "spike": "tsx scripts/spike-throughput.ts",
+    "app": "pnpm run build && node scripts/run-app.mjs",
+    "package": "pnpm run build && electron-builder --win --publish never",
+    "icon": "tsx scripts/make-icon.ts"
   },
   "dependencies": {
     "@fastify/websocket": "^11.3.7",
     "@mdi/js": "^7.4.47",
     "@napi-rs/canvas": "^1.1.1",
+    "electron-updater": "^6.8.11",
     "fastify": "^5.12.8",
     "home-assistant-js-websocket": "^9.9.0",
     "loupedeck": "^7.2.1",
@@ -32,6 +39,8 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^4.1.12"

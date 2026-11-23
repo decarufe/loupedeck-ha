@@ -1,0 +1,94 @@
+name: build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc -p . --noEmit
+      - run: pnpm test
+      - run: pnpm run build
+
+  # Fabrique l'installateur sans aucun droit d'écriture : le code des dépendances ne voit jamais de jeton
+  # capable de publier.
+  package:
+    if: github.event_name == 'push'
+    needs: check
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      # Version 0.2.<numéro du run>, écrite dans le paquet et dans latest.yml.
+      - run: pnpm exec electron-builder --win --publish never -c.extraMetadata.version=0.2.${{ github.run_number }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: installer
+          if-no-files-found: error
+          path: |
+            release/LoupedeckHA-Setup-*.exe
+            release/LoupedeckHA-Setup-*.exe.blockmap
+            release/latest.yml
+
+  # Publie la Release : aucun checkout, aucun code de dépendance, seulement les fichiers produits plus haut.
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Une seule publication à la fois. GitHub peut annuler un publish en attente quand un plus récent
+    # arrive : sans conséquence, la version la plus récente est publiée.
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: installer
+          path: installer
+      # Si une version plus élevée est déjà publiée (runs terminés dans le désordre), celle-ci ne devient
+      # pas « Latest » : electron-updater suit la Release marquée Latest.
+      - name: Publier la Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          highest=$(gh release list --repo "$REPO" --limit 20 --json tagName \
+            --jq '[.[].tagName | select(test("^v[0-9]+[.][0-9]+[.][0-9]+$")) | split(".")[2] | tonumber] | max // 0')
+          latest_flag=()
+          if [ "$highest" -gt "$RUN" ]; then
+            echo "Version plus élevée déjà publiée (segment $highest > $RUN) : --latest=false"
+            latest_flag=(--latest=false)
+          fi
+          gh release create "v0.2.$RUN" installer/* --repo "$REPO" --target "$SHA" \
+            --title "v0.2.$RUN" --generate-notes "${latest_flag[@]}"
