@@ -8,6 +8,7 @@ import WebSocket from 'ws'
 import { defaultConfig, type AppConfig, type CameraDashboard, type CustomDashboard } from '../../src/config/schema.js'
 import { ConfigStore } from '../../src/config/store.js'
 import { DeviceLink } from '../../src/device/link.js'
+import type { ConsoleReleaser, ForceResult } from '../../src/device/release.js'
 import { startEditorServer, type LiveMessage } from '../../src/editor/server.js'
 import { Actions } from '../../src/ha/actions.js'
 import { CameraImageError } from '../../src/ha/types.js'
@@ -36,10 +37,11 @@ describe('serveur de l’éditeur', () => {
   let link: DeviceLink
   let editor: Editor | undefined
   let statics: string
+  let release: ConsoleReleaser | undefined
 
   const start = async (staticDir = statics) => {
     editor = await startEditorServer({
-      store, ha: () => ha, navigator: () => nav, device: () => link, port: 0, staticDir, log: silent,
+      store, ha: () => ha, navigator: () => nav, device: () => link, port: 0, staticDir, log: silent, release,
     })
     return editor
   }
@@ -92,6 +94,7 @@ describe('serveur de l’éditeur', () => {
   afterEach(async () => {
     await editor?.close()
     editor = undefined
+    release = undefined
     nav?.dispose()
     actions.dispose()
     await fs.rm(dir, { recursive: true, force: true })
@@ -202,8 +205,8 @@ describe('serveur de l’éditeur', () => {
       expect(res.headers['cache-control']).toBe('no-store')
       expect(res.body).not.toContain('SECRET123')
       expect(res.body.toLowerCase()).not.toContain('token')
-      const { ha: h, ...rest } = store.get()
-      expect(res.json()).toMatchObject({ format: 'loupedeck-ha', config: { ...rest, ha: { url: h.url, allowSelfSigned: h.allowSelfSigned } } })
+      const { ha: h, device, ...rest } = store.get()
+      expect(res.json()).toMatchObject({ format: 'loupedeck-ha', config: { ...rest, device: { brightness: device.brightness }, ha: { url: h.url, allowSelfSigned: h.allowSelfSigned } } })
     })
 
     it('import_restores_everything_and_keeps_the_token_of_the_same_address', async () => {
@@ -231,6 +234,35 @@ describe('serveur de l’éditeur', () => {
       expect(store.get().ha.token).toBe('')
       await post('/api/config/undo')
       expect(store.get().ha.token).toBe('SECRET123')
+    })
+
+    it('import_never_weakens_tls_for_the_saved_token', async () => {
+      await start()
+      const file = await exported()
+      file.config.ha.allowSelfSigned = true
+      expect((await importFile(file)).json()).toMatchObject({ tokenRequired: false, tlsKept: true, config: { ha: { allowSelfSigned: false } } })
+      // Une fois le certificat auto-signé accepté ici, l'import le garde ; il peut toujours durcir.
+      const relaxed = structuredClone(store.get())
+      relaxed.ha.allowSelfSigned = true
+      await store.update(relaxed)
+      expect((await importFile(file)).json()).toMatchObject({ tlsKept: false, config: { ha: { allowSelfSigned: true } } })
+      file.config.ha.allowSelfSigned = false
+      expect((await importFile(file)).json()).toMatchObject({ tlsKept: false, config: { ha: { allowSelfSigned: false } } })
+      // Nouvelle adresse : aucun jeton n'est en jeu, le réglage du fichier s'applique.
+      file.config.ha = { url: 'https://ailleurs.example', allowSelfSigned: true }
+      expect((await importFile(file)).json()).toMatchObject({ tokenRequired: true, tlsKept: false, config: { ha: { allowSelfSigned: true } } })
+    })
+
+    it('import_keeps_the_port_of_this_computer', async () => {
+      await start()
+      const cfg = structuredClone(store.get())
+      cfg.device.path = 'COM4'
+      await store.update(cfg)
+      const file = await exported()
+      expect(file.config.device).toEqual({ brightness: 1 })
+      file.config.device = { path: '\\\\serveur\\partage', brightness: 0.4 }
+      expect((await importFile(file)).statusCode).toBe(200)
+      expect(store.get().device).toEqual({ path: 'COM4', brightness: 0.4 })
     })
 
     it('import_ignores_a_token_found_in_the_file', async () => {
@@ -280,6 +312,54 @@ describe('serveur de l’éditeur', () => {
       // Autre maison : les entités connues ici ne disent rien de la sienne.
       file.config.ha.url = 'https://ailleurs.example'
       expect((await importFile(file)).statusCode).toBe(200)
+    })
+  })
+
+  describe('libérer la console', () => {
+    const RESULT: ForceResult = { connected: true, reason: null, killed: ['LogiPluginService.exe'], failed: [], agentRunning: true }
+    const force = (payload: unknown, headers = editorHeaders()) => request('POST', '/api/console/force', { payload, headers })
+
+    it('lists_holders_and_forces', async () => {
+      const holders = [{ name: 'LogiPluginService.exe', pid: 7, label: 'Logi Plugin Service', agent: false }]
+      const forceFn = vi.fn(async () => RESULT)
+      release = { holders: async () => holders, force: forceFn }
+      await start()
+      expect((await get('/api/console/holders')).json()).toEqual(holders)
+      expect((await force({})).json()).toEqual(RESULT)
+      expect(forceFn).toHaveBeenLastCalledWith({ includeAgent: false })
+      await force({ includeAgent: true })
+      expect(forceFn).toHaveBeenLastCalledWith({ includeAgent: true })
+      // Seul un vrai booléen ferme aussi Logi Options+.
+      await force({ includeAgent: 'oui', name: 'explorer.exe' })
+      expect(forceFn).toHaveBeenLastCalledWith({ includeAgent: false })
+    })
+
+    it('another_site_cannot_force', async () => {
+      const forceFn = vi.fn(async () => RESULT)
+      release = { holders: async () => [], force: forceFn }
+      await start()
+      expect((await force({}, hostHeader() as never)).statusCode).toBe(403)
+      expect((await force({}, { ...editorHeaders(), origin: 'https://evil.example' } as never)).statusCode).toBe(403)
+      expect(forceFn).not.toHaveBeenCalled()
+    })
+
+    it('failure_is_reported', async () => {
+      release = { holders: async () => { throw new Error('x') }, force: async () => { throw new Error('x') } }
+      await start()
+      const res = await force({})
+      expect(res.statusCode).toBe(500)
+      expect(res.json()).toEqual({ error: 'Impossible de lister ou de fermer les programmes' })
+      expect((await get('/api/console/holders')).statusCode).toBe(500)
+    })
+
+    it('status_tells_why_the_console_is_not_connected', async () => {
+      await start()
+      const b = new DeviceLink({ createDevice: async () => { throw new Error('Opening COM4: Access denied') }, log: silent })
+      link = b
+      b.start()
+      await vi.waitFor(() => expect(b.problem()).toBe('busy'))
+      expect((await get('/api/status')).json().device).toEqual({ status: 'disconnected', firmware: null, problem: 'busy' })
+      await b.stop()
     })
   })
 
@@ -357,7 +437,7 @@ describe('serveur de l’éditeur', () => {
     await start()
     const res = await get('/api/status')
     expect(res.json()).toEqual({
-      device: { status: 'disconnected', firmware: null },
+      device: { status: 'disconnected', firmware: null, problem: null },
       ha: { state: 'online', reason: null },
       activeButton: 0,
     })

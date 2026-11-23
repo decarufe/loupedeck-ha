@@ -29,6 +29,15 @@ export interface DeviceLinkOptions {
 }
 
 export type DeviceStatus = 'connected' | 'disconnected'
+/**
+ * Pourquoi la console n'est pas connectée : `absent` (pas branchée), `busy` (port ouvert par un autre programme),
+ * `silent` (port ouvert, mais aucune réponse à temps), `error` (autre échec).
+ */
+export type DeviceProblem = 'absent' | 'busy' | 'silent' | 'error'
+
+export class DeviceNotFoundError extends Error {
+  constructor() { super('Loupedeck Live introuvable') }
+}
 
 const LIVE_VENDOR_ID = 0x2ec2
 const LIVE_PRODUCT_ID = 0x0004
@@ -57,6 +66,12 @@ const BUSY_HINT = 'La console est peut-être occupée par un autre programme. Fe
 /** Un seul délai dépassé arrive au branchement ou au réveil : le conseil n'apparaît qu'au deuxième d'affilée. */
 const BUSY_HINT_AFTER_TIMEOUTS = 2
 
+function problemOf(err: unknown): DeviceProblem {
+  if (err instanceof DeviceNotFoundError) return 'absent'
+  if (err instanceof TimeoutError) return 'silent'
+  return BUSY_PORT.test(errorText(err)) ? 'busy' : 'error'
+}
+
 interface PendingTimer { timer: ReturnType<typeof setTimeout>; reject: (e: Error) => void }
 
 /**
@@ -78,12 +93,17 @@ export class DeviceLink {
   private firmwareVersion: string | null = null
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private retryIndex = 0
+  private attempting = false
+  /** `retryNow()` demandé pendant une tentative : la suivante part sans attendre. */
+  private retryAtOnce = false
+  private currentProblem: DeviceProblem | null = null
   /** Délais de connexion dépassés d'affilée : le conseil « Fermez le logiciel Loupedeck » attend le deuxième. */
   private consecutiveTimeouts = 0
   private readonly timers = new Set<PendingTimer>()
 
   private readonly inputCbs = new Set<(e: InputEvent) => void>()
   private readonly statusCbs = new Set<(s: DeviceStatus) => void>()
+  private readonly problemCbs = new Set<(p: DeviceProblem | null) => void>()
 
   private pending: Surface | null = null
   private latest: Surface | null = null
@@ -128,6 +148,34 @@ export class DeviceLink {
 
   status(): DeviceStatus { return this.current }
   firmware(): string | null { return this.firmwareVersion }
+  /** Cause du dernier échec ; null si la console est connectée ou qu'aucune tentative n'a encore échoué. */
+  problem(): DeviceProblem | null { return this.currentProblem }
+
+  /** Nouvel essai sans attendre la temporisation (la console vient d'être libérée). */
+  retryNow(): void {
+    if (!this.started || this.stopped || this.device) return
+    this.retryIndex = 0
+    if (this.attempting) {
+      this.retryAtOnce = true
+      return
+    }
+    if (this.retryTimer) clearTimeout(this.retryTimer)
+    void this.attempt()
+  }
+
+  /** Vrai dès que la console est connectée, faux si elle ne l'est pas après `ms`. */
+  waitConnected(ms: number): Promise<boolean> {
+    if (this.current === 'connected') return Promise.resolve(true)
+    return new Promise((resolve) => {
+      const done = (ok: boolean) => {
+        clearTimeout(timer)
+        off()
+        resolve(ok)
+      }
+      const timer = setTimeout(() => done(false), ms)
+      const off = this.onStatus((s) => { if (s === 'connected') done(true) })
+    })
+  }
 
   onInput(cb: (e: InputEvent) => void): () => void {
     this.inputCbs.add(cb)
@@ -137,6 +185,11 @@ export class DeviceLink {
   onStatus(cb: (s: DeviceStatus) => void): () => void {
     this.statusCbs.add(cb)
     return () => { this.statusCbs.delete(cb) }
+  }
+
+  onProblem(cb: (p: DeviceProblem | null) => void): () => void {
+    this.problemCbs.add(cb)
+    return () => { this.problemCbs.delete(cb) }
   }
 
   present(s: Surface): void {
@@ -167,6 +220,8 @@ export class DeviceLink {
   private async attempt(): Promise<void> {
     this.retryTimer = null
     if (this.stopped) return
+    this.attempting = true
+    this.retryAtOnce = false
     let candidate: LoupedeckLike | null = null
     let abandoned = false
     const op = (async () => {
@@ -179,7 +234,13 @@ export class DeviceLink {
       // Si la tentative a été abandonnée (délai ou stop()) pendant l'ouverture, le premier close() a pu
       // être sans effet (port pas encore ouvert) : on referme une fois connect() terminé, quelle qu'en soit l'issue.
       try {
-        await d.connect()
+        // Un échec d'ouverture du port (« Access denied ») n'arrive que par « disconnect » : connect() reste pendu.
+        await Promise.race([
+          d.connect(),
+          new Promise<never>((_, reject) => {
+            d.on('disconnect', (e: unknown) => reject(e ? toError(e) : new Error('déconnectée pendant la connexion')))
+          }),
+        ])
       } catch (err) {
         if (abandoned) this.discard(d)
         throw err
@@ -192,15 +253,18 @@ export class DeviceLink {
     })()
     try {
       const dev = await this.timed(op, this.connectTimeoutMs)
+      this.attempting = false
       if (this.stopped) {
         this.discard(dev)
         return
       }
       this.onConnected(dev)
     } catch (err) {
+      this.attempting = false
       abandoned = true
       if (candidate) this.discard(candidate)
       if (this.stopped) return
+      this.setProblem(problemOf(err))
       if (err instanceof TimeoutError) {
         this.consecutiveTimeouts++
         if (this.consecutiveTimeouts >= BUSY_HINT_AFTER_TIMEOUTS) {
@@ -235,6 +299,7 @@ export class DeviceLink {
       this.lose(dev, 'Console déconnectée', err ? { erreur: errorText(err) } : undefined, 'warn')
     })
     this.log.info('Console connectée')
+    this.setProblem(null)
     this.setStatus('connected')
 
     this.fire('setBrightness', () => dev.setBrightness(this.brightness))
@@ -272,8 +337,8 @@ export class DeviceLink {
 
   private scheduleRetry(): void {
     if (this.stopped || this.retryTimer) return
-    const delay = this.retryDelaysMs[Math.min(this.retryIndex, this.retryDelaysMs.length - 1)]!
-    this.retryIndex++
+    const delay = this.retryAtOnce ? 0 : this.retryDelaysMs[Math.min(this.retryIndex, this.retryDelaysMs.length - 1)]!
+    if (!this.retryAtOnce) this.retryIndex++
     this.log.debug('Nouvelle tentative de connexion programmée', { delaiMs: delay })
     this.retryTimer = setTimeout(() => { void this.attempt() }, delay)
   }
@@ -387,6 +452,14 @@ export class DeviceLink {
     }
   }
 
+  private setProblem(p: DeviceProblem | null): void {
+    if (p === this.currentProblem) return
+    this.currentProblem = p
+    for (const cb of [...this.problemCbs]) {
+      try { cb(p) } catch (e) { this.log.error("Erreur dans un abonné à l'état de la console", { erreur: errorText(e) }) }
+    }
+  }
+
   private emitInput(e: InputEvent): void {
     for (const cb of [...this.inputCbs]) {
       try { cb(e) } catch (err) { this.log.error('Erreur dans le traitement d’une entrée', { erreur: errorText(err) }) }
@@ -407,7 +480,7 @@ export function createLoupedeckFactory(configuredPath: string | null): () => Pro
     // Import différé : la librairie charge serialport (module natif) ; inutile tant qu'on ne se connecte pas.
     const { LoupedeckLive } = await import('loupedeck')
     const path = findLivePath(await LoupedeckLive.list({ ignoreWebsocket: true }), configuredPath)
-    if (!path) throw new Error('Loupedeck Live introuvable')
+    if (!path) throw new DeviceNotFoundError()
     return new LoupedeckLive({ path, autoConnect: false, reconnectInterval: 0 })
   }
 }

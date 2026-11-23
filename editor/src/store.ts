@@ -464,8 +464,8 @@ export function importSettings(text: string): Promise<boolean> {
       state.selectedSlot = null
       state.previewVersion++
       state.notice = r.tokenRequired
-        ? 'Réglages importés. Saisissez le jeton Home Assistant dans les réglages : il ne fait pas partie du fichier.'
-        : 'Réglages importés. « Annuler » revient aux réglages précédents.'
+        ? `Réglages importés. L’adresse Home Assistant est ${r.config.ha.url} : saisissez son jeton seulement si vous la reconnaissez.`
+        : `Réglages importés. « Annuler » revient aux réglages précédents.${r.tlsKept ? ' « Accepter un certificat auto-signé » n’a pas été repris : cochez-le si vous en avez besoin.' : ''}`
       return true
     } catch (e) {
       fail(e)

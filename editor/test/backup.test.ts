@@ -45,12 +45,23 @@ describe('export et import des réglages', () => {
     expect(state.notice).toBe('Réglages importés. « Annuler » revient aux réglages précédents.')
   })
 
-  it('import_asks_for_the_token_of_a_new_address', async () => {
+  it('import_names_the_new_address_before_asking_for_its_token', async () => {
     mockFetch()
     const w = await mountEditor()
-    vi.stubGlobal('fetch', vi.fn(async () => json({ config: publicConfig(), tokenRequired: true })))
+    const config = publicConfig()
+    config.ha = { url: 'https://ailleurs.example', allowSelfSigned: false, hasToken: false }
+    vi.stubGlobal('fetch', vi.fn(async () => json({ config, tokenRequired: true, tlsKept: false })))
     await pick(w, '{}')
-    expect(state.notice).toContain('Saisissez le jeton')
+    expect(state.notice).toBe('Réglages importés. L’adresse Home Assistant est https://ailleurs.example : saisissez son jeton seulement si vous la reconnaissez.')
+    expect(w.find('input.ha-url').exists()).toBe(true)
+  })
+
+  it('import_says_when_the_certificate_setting_was_not_applied', async () => {
+    mockFetch()
+    const w = await mountEditor()
+    vi.stubGlobal('fetch', vi.fn(async () => json({ config: publicConfig(), tokenRequired: false, tlsKept: true })))
+    await pick(w, '{}')
+    expect(state.notice).toContain('« Accepter un certificat auto-signé » n’a pas été repris')
   })
 
   it('import_refusal_and_unreadable_file_show_why', async () => {

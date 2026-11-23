@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { DeviceLink, findLivePath, type DeviceLinkOptions, type DeviceStatus } from '../../src/device/link.js'
+import { DeviceLink, DeviceNotFoundError, findLivePath, type DeviceLinkOptions, type DeviceStatus } from '../../src/device/link.js'
 import type { InputEvent } from '../../src/device/input.js'
 import { SCREEN, keyRect } from '../../src/device/regions.js'
 import { createSurface, toRgb565, type Surface } from '../../src/render/surface.js'
@@ -65,6 +65,109 @@ describe('DeviceLink', () => {
     expect(statuses).toEqual(['connected'])
     expect(link.firmware()).toBe('0.2.5')
     await link.stop()
+  })
+
+  describe('cause de l’échec et nouvel essai immédiat', () => {
+    it('open_error_fails_at_once_instead_of_waiting_for_the_timeout', async () => {
+      // La librairie signale l'échec d'ouverture par « disconnect » et laisse connect() pendu.
+      const d1 = new FakeDevice({ connect: 'hang' })
+      const { link, log, created } = setup([d1])
+      const problems: unknown[] = []
+      link.onProblem((p) => problems.push(p))
+      link.start()
+      await flush()
+      d1.emit('disconnect', new Error('Opening COM4: Access denied'))
+      await flush()
+      expect(link.problem()).toBe('busy')
+      expect(log.warn.mock.calls.some(([m]) => String(m).includes('Fermez le logiciel Loupedeck'))).toBe(true)
+      expect(d1.callsOf('close')).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(created).toHaveLength(2)
+      expect(link.status()).toBe('connected')
+      expect(link.problem()).toBeNull()
+      expect(problems).toEqual(['busy', null])
+      await link.stop()
+    })
+
+    it('disconnect_without_error_while_connecting_is_a_failure_too', async () => {
+      const d1 = new FakeDevice({ connect: 'hang' })
+      const { link, created } = setup([d1])
+      link.start()
+      await flush()
+      d1.emit('disconnect')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(created).toHaveLength(2)
+      await link.stop()
+    })
+
+    it.each([
+      ['absent', new DeviceNotFoundError()],
+      ['busy', new Error('Opening COM4: Access denied')],
+      ['error', new Error('autre chose')],
+    ] as const)('problem_%s', async (problem, err) => {
+      const { link } = setup([], { createDevice: async () => { throw err } })
+      expect(link.problem()).toBeNull()
+      link.start()
+      await flush()
+      expect(link.problem()).toBe(problem)
+      await link.stop()
+    })
+
+    it('problem_silent_after_a_timeout', async () => {
+      const { link } = setup([new FakeDevice({ connect: 'hang' })])
+      link.start()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(link.problem()).toBe('silent')
+      await link.stop()
+    })
+
+    it('retryNow_skips_the_wait', async () => {
+      const { link, created } = setup([new FakeDevice({ connect: 'reject' }), new FakeDevice()])
+      link.start()
+      await flush()
+      expect(created).toHaveLength(1)
+      link.retryNow()
+      await flush()
+      expect(created).toHaveLength(2)
+      expect(link.status()).toBe('connected')
+      link.retryNow() // sans effet une fois connectée
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(created).toHaveLength(2)
+      await link.stop()
+      link.retryNow() // ni après l'arrêt
+      await flush()
+      expect(created).toHaveLength(2)
+    })
+
+    it('retryNow_during_an_attempt_retries_right_after_it_without_overlap', async () => {
+      const d1 = new FakeDevice({ connect: 'hang' })
+      const { link, created } = setup([d1])
+      link.start()
+      await flush()
+      link.retryNow()
+      await flush()
+      expect(created).toHaveLength(1)
+      d1.emit('disconnect', new Error('Opening COM4: Access denied'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(created).toHaveLength(2)
+      expect(link.status()).toBe('connected')
+      await link.stop()
+    })
+
+    it('waitConnected', async () => {
+      const { link } = setup([new FakeDevice({ connect: 'reject' })])
+      link.start()
+      await flush()
+      const late = link.waitConnected(500)
+      await vi.advanceTimersByTimeAsync(500)
+      expect(await late).toBe(false)
+      const soon = link.waitConnected(5000)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(await soon).toBe(true)
+      expect(await link.waitConnected(5000)).toBe(true)
+      await link.stop()
+      expect(vi.getTimerCount()).toBe(0)
+    })
   })
 
   it('busy_hint_only_after_two_consecutive_timeouts', async () => {

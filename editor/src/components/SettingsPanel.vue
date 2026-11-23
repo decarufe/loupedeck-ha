@@ -97,7 +97,7 @@ function setBrightness(e: Event) {
         <input class="import-file" type="file" accept=".json,application/json" @change="importFile" />
       </label>
     </div>
-    <p class="backup-note">Le fichier contient tout (pages, adresse Home Assistant, console) sauf le jeton. Un import remplace tous les réglages ; le jeton en place est gardé si l’adresse est la même.</p>
+    <p class="backup-note">Le fichier contient tout (pages, adresse Home Assistant, luminosité, port de l’éditeur) sauf le jeton et le port de la console, propre à ce PC. Un import remplace tous les réglages ; le jeton en place est gardé si l’adresse est la même.</p>
   </section>
 </template>
 

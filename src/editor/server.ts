@@ -7,6 +7,7 @@ import { appConfigSchema, KNOB_IDS, type AppConfig, type KnobId, type Tile } fro
 import type { InputEvent, TapTarget } from '../device/input.js'
 import { ConfigStore, ConfigValidationError } from '../config/store.js'
 import type { DeviceLink } from '../device/link.js'
+import type { ConsoleReleaser } from '../device/release.js'
 import type { HaPort } from '../ha/types.js'
 import type { Logger } from '../log.js'
 import type { Navigator } from '../navigator.js'
@@ -29,6 +30,8 @@ export interface EditorServerDeps {
   port: number
   staticDir: string
   log: Logger
+  /** Ferme les logiciels qui tiennent la console ; absent : fonction indisponible. */
+  release?: ConsoleReleaser
   /** Délai maximal de la liste des entités lors d'un PUT (défaut 3000 ms). */
   entityTimeoutMs?: number
 }
@@ -67,22 +70,23 @@ function publicConfig(store: ConfigStore): PublicConfig {
   }
 }
 
-/** Fichier d'export des réglages : toute la configuration sauf le jeton. */
+/** Fichier d'export des réglages : toute la configuration sauf le jeton et le port de la console, propre à ce PC. */
 export const EXPORT_FORMAT = 'loupedeck-ha'
 
 function exportSettings(store: ConfigStore) {
-  const { ha, ...rest } = store.get()
-  return { format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), config: { ...rest, ha: { url: ha.url, allowSelfSigned: ha.allowSelfSigned } } }
+  const { ha, device, ...rest } = store.get()
+  const config = { ...rest, device: { brightness: device.brightness }, ha: { url: ha.url, allowSelfSigned: ha.allowSelfSigned } }
+  return { format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), config }
 }
 
 /** Configuration contenue dans un fichier importé : un export, ou une copie de config.json. */
-function settingsOf(file: unknown): { ha: Record<string, unknown>; rest: Record<string, unknown> } | null {
+function settingsOf(file: unknown): { ha: Record<string, unknown>; device: Record<string, unknown>; rest: Record<string, unknown> } | null {
   if (!isRecord(file)) return null
   if (file.format !== undefined && file.format !== EXPORT_FORMAT) return null
   const config = file.format === EXPORT_FORMAT ? file.config : file
-  if (!isRecord(config) || !isRecord(config.ha) || !Array.isArray(config.buttons)) return null
-  const { ha, ...rest } = config
-  return { ha: ha as Record<string, unknown>, rest }
+  if (!isRecord(config)) return null
+  const { ha, device, ...rest } = config
+  return isRecord(ha) && isRecord(device) && Array.isArray(rest.buttons) ? { ha, device, rest } : null
 }
 
 const normUrl = (u: unknown) => (typeof u === 'string' ? u.trim().replace(/\/+$/, '') : u)
@@ -267,6 +271,7 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
   /**
    * Remplace tous les réglages par ceux d'un fichier. Le jeton n'en vient jamais : celui en place est gardé, sauf si
    * l'adresse Home Assistant change (il partirait vers un autre serveur) ; il faut alors le saisir à nouveau.
+   * Le jeton gardé ne perd pas non plus la vérification du certificat : le fichier ne peut que la durcir.
    */
   app.post('/api/config/import', async (req, reply) => {
     if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
@@ -274,15 +279,22 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     }
     const file = settingsOf(req.body)
     if (!file) return reply.code(400).send({ error: 'Ce fichier ne contient pas de réglages Loupedeck HA' })
-    const current = d.store.get().ha
-    const sameHome = normUrl(file.ha.url) === normUrl(current.url)
-    const parsed = appConfigSchema.safeParse({ ...file.rest, ha: { ...file.ha, token: sameHome ? current.token : '' } })
+    const current = d.store.get()
+    const sameHome = normUrl(file.ha.url) === normUrl(current.ha.url)
+    const token = sameHome ? current.ha.token : ''
+    const tlsKept = token !== '' && file.ha.allowSelfSigned === true && !current.ha.allowSelfSigned
+    const parsed = appConfigSchema.safeParse({
+      ...file.rest,
+      // Port de la console : celui de ce PC, jamais celui du fichier.
+      device: { ...file.device, path: current.device.path },
+      ha: { ...file.ha, token, ...(tlsKept ? { allowSelfSigned: false } : {}) },
+    })
     if (!parsed.success) return reply.code(400).send({ error: 'Configuration invalide', issues: issuesOf(parsed.error) })
     const refusal = await tryUpdate(parsed.data, sameHome)
     if (refusal) return reply.code(400).send(refusal)
     d.log.info('Réglages importés', { memeAdresse: sameHome })
     const config = publicConfig(d.store)
-    return { config, tokenRequired: !config.ha.hasToken }
+    return { config, tokenRequired: !config.ha.hasToken, tlsKept }
   })
 
   app.post('/api/config/undo', async (_req, reply) => {
@@ -377,10 +389,32 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     return { ok: true }
   })
 
+  const releaseFailed = (err: unknown, reply: FastifyReply) => {
+    d.log.error('Libération de la console impossible', { erreur: String(err) })
+    return reply.code(500).send({ error: 'Impossible de lister ou de fermer les programmes' })
+  }
+  app.get('/api/console/holders', async (_req, reply) => {
+    try {
+      return (await d.release?.holders()) ?? []
+    } catch (err) {
+      return releaseFailed(err, reply)
+    }
+  })
+
+  /** Ferme les logiciels Loupedeck / Logi connus, puis prend la console. La liste est fixée côté serveur. */
+  app.post('/api/console/force', async (req, reply) => {
+    if (!d.release) return reply.code(501).send({ error: 'Fonction indisponible' })
+    try {
+      return await d.release.force({ includeAgent: isRecord(req.body) && req.body.includeAgent === true })
+    } catch (err) {
+      return releaseFailed(err, reply)
+    }
+  })
+
   app.get('/api/status', async () => {
     const device = d.device()
     return {
-      device: { status: device.status(), firmware: device.firmware() },
+      device: { status: device.status(), firmware: device.firmware(), problem: device.problem() },
       ha: d.ha().status(),
       activeButton: d.navigator()?.activeIndex() ?? -1,
     }
