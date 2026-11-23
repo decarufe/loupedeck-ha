@@ -52,9 +52,14 @@ L'utilisateur a choisi **A**.
 **Visuel** (proposition validée implicitement, non contredite)
 - Les **barres de précipitations** sont l'élément principal : elles partent du bas, plus larges et plus lisibles que la courbe.
 - Pluie : bleu. Neige : blanc glacé avec un petit flocon au-dessus de la barre la plus haute. Mélange : barre rayée bleu et blanc.
-- Passé : barres pleines (quantité). Futur : barres pâles (hauteur selon la probabilité).
+- Toutes les barres ont une hauteur en **mm** (passé et futur). Futur : l'**opacité** suit la probabilité (plus pâle = moins sûr).
 - La **température** est une ligne fine derrière les barres ; la **température ressentie** (humidex ou refroidissement éolien) est la seconde ligne ; l'espace entre les deux est une zone semi-transparente.
 - Un **trait pointillé « maintenant »** sépare le bouton 2 du bouton 3.
+- **Le futur a un fond légèrement grisé**, et ses lignes et ses barres sont un peu désaturées : on voit d'un coup d'œil la séparation passé/futur (demande de l'utilisateur, révision 1).
+- **Échelles** (révision 1), superposées au tracé pour garder « 4 h par touche » :
+  - Température (bord gauche) : valeurs maximum et minimum (entiers qui encadrent les courbes) et un petit trait par degré (par 2 ° si l'écart dépasse 15 °, puis par 5 °, etc.).
+  - Précipitations (bord droit) : maximum en mm (au moins 2), un trait par mm, « 0 » en bas ; s'il y a de la neige, une seconde ligne en blanc donne l'équivalent en cm (cm = mm × 0,7).
+  - Temps (bas, bande de 11 px) : un trait par heure pleine et l'heure locale toutes les 2 h (« 14 h »).
 
 **Source des données**
 - Service Open-Meteo : température, point de rosée, vent, précipitations (pluie et neige séparées), probabilité de précipitation, sur −8 h à +4 h.
