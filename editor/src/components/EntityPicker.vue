@@ -33,6 +33,6 @@ const change = (e: Event) => {
 </template>
 
 <style scoped>
-.picker { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
-select { font: inherit; color: inherit; background: #2a2a2a; border: 1px solid #555; border-radius: 6px; padding: 0.35rem; }
+.picker { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; color: var(--muted); }
+select { color: var(--fg); }
 </style>

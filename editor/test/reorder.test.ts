@@ -87,7 +87,7 @@ describe('réordonner par glisser-déposer', () => {
     const round = (pos: number) => w.get(`.round-button[data-round="${pos}"]`)
     await round(0).trigger('dragstart', { dataTransfer: dt() })
     await round(2).trigger('dragover', { dataTransfer: dt() })
-    expect(w.get('.round-button.lifted').attributes('style')).toContain('left: 140px')
+    expect(w.get('.round-button.lifted').attributes('style')).toContain('left: 25%')
     expect(round(0).attributes('aria-label')).toBe('Bouton rond 2 — Température')
     await round(2).trigger('drop', { dataTransfer: dt() })
     await flushPromises()

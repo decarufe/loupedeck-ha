@@ -102,7 +102,7 @@ Le serveur MCP de Home Assistant ne voit que les entités exposées à Assist. L
 - Afficher la caméra en fond derrière les touches des autres tableaux.
 - Lire les caméras en RTSP direct depuis le PC, ou obtenir de la vidéo fluide : en v1, tout passe par Home Assistant. La source WebRTC pour Alarm.com dépend de l'essai n° 2.
 - Mettre la console en veille ou l'atténuer automatiquement : elle reste à la luminosité réglée (pleine par défaut), à la demande de l'utilisateur.
-- Piloter la maison depuis la Live virtuelle de l'éditeur : elle sert seulement à modifier la disposition, mais elle affiche les états réels.
+- Piloter la maison depuis la Live virtuelle de l'éditeur : elle sert seulement à modifier la disposition, mais elle affiche les états réels. *(Révisé le 2026-11-23 : le mode Essayer de l'éditeur pilote la maison ; voir `2026-11-22-types-de-page-design.md`, section 5.)*
 - Ajouter des types de tableau au-delà des quatre décrits : médias, scènes, alarme. L'architecture doit cependant permettre d'en ajouter facilement (section 7). *(Révisé le 2026-11-22 : voir `2026-11-22-types-de-page-design.md`.)* Cinq types de page désormais ; les scènes se posent sur une touche Action.
 - Gérer plusieurs utilisateurs ou un accès depuis un autre poste : l'éditeur écoute sur `localhost` seulement.
 

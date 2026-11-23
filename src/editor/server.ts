@@ -3,7 +3,8 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import fastifyWebsocket from '@fastify/websocket'
 import Fastify, { type FastifyReply } from 'fastify'
-import { appConfigSchema, KNOB_IDS, type AppConfig, type Tile } from '../config/schema.js'
+import { appConfigSchema, KNOB_IDS, type AppConfig, type KnobId, type Tile } from '../config/schema.js'
+import type { InputEvent, TapTarget } from '../device/input.js'
 import { ConfigStore, ConfigValidationError } from '../config/store.js'
 import type { DeviceLink } from '../device/link.js'
 import type { HaPort } from '../ha/types.js'
@@ -67,6 +68,36 @@ function publicConfig(store: ConfigStore): PublicConfig {
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** Geste du mode Essayer, validé champ par champ (rien d'autre n'atteint la page). */
+export function parseInput(v: unknown): InputEvent | null {
+  if (!isRecord(v)) return null
+  const target = (t: unknown): TapTarget | null => {
+    if (!isRecord(t)) return null
+    if (t.kind === 'key' && Number.isInteger(t.index) && (t.index as number) >= 0 && (t.index as number) < 12) return { kind: 'key', index: t.index as number }
+    if (t.kind === 'strip' && (t.side === 'left' || t.side === 'right') && [0, 1, 2].includes(t.zone as number)) return { kind: 'strip', side: t.side, zone: t.zone as 0 | 1 | 2 }
+    return null
+  }
+  const knob = (k: unknown): KnobId | null => ((KNOB_IDS as readonly unknown[]).includes(k) ? (k as KnobId) : null)
+  switch (v.type) {
+    case 'tap':
+    case 'release': {
+      const t = target(v.target)
+      return t ? { type: v.type, target: t } : null
+    }
+    case 'knobTurn': {
+      const k = knob(v.knob)
+      const delta = v.delta
+      return k && typeof delta === 'number' && Number.isInteger(delta) && delta !== 0 && Math.abs(delta) <= 10 ? { type: 'knobTurn', knob: k, delta } : null
+    }
+    case 'knobPress': {
+      const k = knob(v.knob)
+      return k ? { type: 'knobPress', knob: k } : null
+    }
+    default:
+      return null
+  }
+}
 
 /** Vérifie chaque emplacement contre les entités connues ; une entité inconnue est acceptée. */
 function placementIssues(cfg: AppConfig, known: Map<string, EntityInfo>): string[] {
@@ -134,6 +165,11 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
       return reply.code(403).send({ error: 'Requête non autorisée' })
     }
   })
+
+  const notifyAll = (m: LiveMessage) => {
+    const text = JSON.stringify(m)
+    for (const s of sockets) if (s.readyState === s.OPEN) s.send(text)
+  }
 
   await app.register(fastifyWebsocket)
 
@@ -267,6 +303,24 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     return reply.code(400).send({ error: 'Commande inconnue pour cette page' })
   })
 
+  /**
+   * Mode Essayer de l'éditeur : un geste sur la Live virtuelle est transmis à la page comme s'il venait de la console
+   * (toucher, fin de toucher, molette tournée ou appuyée). Il pilote donc la vraie maison, comme la console.
+   */
+  app.post<{ Params: { index: string } }>('/api/pages/:index/input', async (req, reply) => {
+    const i = Number(req.params.index)
+    const nav = d.navigator()
+    if (!nav) return reply.code(503).send({ error: 'Console en cours de reconnexion' })
+    const page = Number.isInteger(i) && i >= 0 && i < 8 ? nav.dashboard(i) : null
+    if (!page) return reply.code(404).send({ error: 'Page inconnue' })
+    const e = parseInput(req.body)
+    if (!e) return reply.code(400).send({ error: 'Geste invalide' })
+    page.handle(e)
+    // L'aperçu d'une page qui n'est pas affichée sur la console ne suit pas seul : on le signale.
+    setTimeout(() => notifyAll({ type: 'preview' }), 150)
+    return { ok: true }
+  })
+
   app.get('/api/status', async () => {
     const device = d.device()
     return {
@@ -315,10 +369,7 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
   let closing: Promise<void> | null = null
   return {
     url: `http://${HOST}:${boundPort}`,
-    notify(m) {
-      const text = JSON.stringify(m)
-      for (const s of sockets) if (s.readyState === s.OPEN) s.send(text)
-    },
+    notify: notifyAll,
     close() {
       closing ??= (async () => {
         for (const s of sockets) s.terminate()

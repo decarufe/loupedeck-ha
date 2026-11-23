@@ -171,6 +171,14 @@ describe('painters', () => {
     expect(lit).toBeGreaterThan(20)
   })
 
+  it('tiles_have_gaps_and_rounded_corners', async () => {
+    const s = createSurface()
+    await paint(s, withKey0(tile({})))
+    expect(px(s, 60, 45)).toEqual([0, 0, 0]) // écart à gauche de la touche
+    expect(px(s, 62, 2)).toEqual([0, 0, 0]) // coin arrondi
+    expect(px(s, 105, 45)).toEqual([255, 179, 0])
+  })
+
   it('grid_paints_big_and_graph_tiles', async () => {
     const s = createSurface()
     const base = { icon: null, state: 'off' as const, level: null, pending: false, accent: '#00FF00' }
@@ -179,7 +187,7 @@ describe('painters', () => {
     keys[1] = { ...base, label: 'CPU', valueText: '23 %', layout: 'graph', sub: '6h', spark: { values: [1, 5, 2, 8], style: 'area' } } as never
     await paint(s, { kind: 'grid', keys, left: [], right: [], offline: false })
     // Barre de couleur au bas de la touche Valeur, courbe verte dans la touche Graphique.
-    const [, g0] = px(s, 105, 88)
+    const [, g0] = px(s, 105, 86)
     expect(g0).toBeGreaterThan(200)
     let green = 0
     const d = s.ctx.getImageData(150, 50, 90, 40).data
@@ -213,8 +221,9 @@ describe('painters (corrections)', () => {
   it('key_tile_has_no_level_bar', async () => {
     const s = createSurface()
     await paint(s, withKey0(tile({ level: 0.6 })))
-    expect(px(s, 64, 87)).toEqual([255, 179, 0])
-    expect(px(s, 70, 87)).toEqual([255, 179, 0])
+    // Bas de la touche (à l'intérieur des coins arrondis) : couleur de la touche, pas de barre blanche.
+    expect(px(s, 75, 86)).toEqual([255, 179, 0])
+    expect(px(s, 90, 86)).toEqual([255, 179, 0])
   })
   it('strip_bar_ends_at_round_level_52', async () => {
     const s = createSurface()
