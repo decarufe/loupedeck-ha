@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ButtonPanel from './components/ButtonPanel.vue'
 import EntityPalette from './components/EntityPalette.vue'
 import LiveDevice from './components/LiveDevice.vue'
+import Messages from './components/Messages.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { clearSlot, init, state, tileAt, undo } from './store'
 
@@ -74,7 +75,7 @@ onBeforeUnmount(() => {
       <button type="button" class="open-settings" aria-label="Réglages" title="Réglages : Home Assistant, console" @click="showSettings = true">⚙ Réglages</button>
     </header>
     <p v-if="state.config?.loadWarning" class="banner warning" role="status">{{ state.config.loadWarning }}</p>
-    <p v-if="state.error" class="banner error" role="alert">{{ state.error }}</p>
+    <Messages v-if="!showSettings" />
     <p v-if="state.mode === 'try'" class="banner try" role="status">
       Mode Essayer : les touches et les molettes de la Live virtuelle pilotent la vraie maison, comme la console.
     </p>
@@ -88,6 +89,8 @@ onBeforeUnmount(() => {
     <div v-if="showSettings" class="overlay" @click.self="showSettings = false">
       <div class="dialog panel" role="dialog" aria-modal="true" aria-label="Réglages">
         <button type="button" class="close-settings" aria-label="Fermer les réglages" @click="showSettings = false">×</button>
+        <!-- La page est masquée par la fenêtre : ses messages s’affichent ici. -->
+        <Messages />
         <SettingsPanel />
       </div>
     </div>
@@ -108,6 +111,8 @@ onBeforeUnmount(() => {
 .banner { padding: 8px 12px; border-radius: 8px; margin: 0 0 12px; font-size: 0.88rem; }
 .banner.error { background: #3a1616; border: 1px solid #7a2c2c; }
 .banner.warning { background: #3a3012; border: 1px solid #6b5a1c; }
+.banner.notice { background: #14301a; border: 1px solid #2c5a2e; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.close-notice { padding: 0 8px; background: transparent; }
 .banner.try { background: #12303f; border: 1px solid #2b5a72; color: #d6f1ff; }
 .loading { color: var(--muted); }
 /* Atelier en trois zones : palette · console · réglages. */
@@ -120,5 +125,6 @@ onBeforeUnmount(() => {
 }
 .overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: grid; place-items: center; z-index: 40; padding: 16px; }
 .dialog { position: relative; width: min(520px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 16px; }
+.dialog > .banner { margin-right: 2.5rem; }
 .close-settings { position: absolute; top: 10px; right: 10px; padding: 2px 9px; font-size: 1.1rem; line-height: 1.2; }
 </style>

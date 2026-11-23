@@ -67,6 +67,26 @@ function publicConfig(store: ConfigStore): PublicConfig {
   }
 }
 
+/** Fichier d'export des réglages : toute la configuration sauf le jeton. */
+export const EXPORT_FORMAT = 'loupedeck-ha'
+
+function exportSettings(store: ConfigStore) {
+  const { ha, ...rest } = store.get()
+  return { format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), config: { ...rest, ha: { url: ha.url, allowSelfSigned: ha.allowSelfSigned } } }
+}
+
+/** Configuration contenue dans un fichier importé : un export, ou une copie de config.json. */
+function settingsOf(file: unknown): { ha: Record<string, unknown>; rest: Record<string, unknown> } | null {
+  if (!isRecord(file)) return null
+  if (file.format !== undefined && file.format !== EXPORT_FORMAT) return null
+  const config = file.format === EXPORT_FORMAT ? file.config : file
+  if (!isRecord(config) || !isRecord(config.ha) || !Array.isArray(config.buttons)) return null
+  const { ha, ...rest } = config
+  return { ha: ha as Record<string, unknown>, rest }
+}
+
+const normUrl = (u: unknown) => (typeof u === 'string' ? u.trim().replace(/\/+$/, '') : u)
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 /** Geste du mode Essayer, validé champ par champ (rien d'autre n'atteint la page). */
@@ -194,7 +214,6 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     const { newToken, hasToken: _hasToken, loadWarning: _loadWarning, ...rest } = input
     if (newToken !== undefined && typeof newToken !== 'string') return bad('Corps de requête invalide', ['newToken : texte attendu'])
     const trimmed = (newToken ?? '').trim()
-    const normUrl = (u: unknown) => (typeof u === 'string' ? u.trim().replace(/\/+$/, '') : u)
     const urlChanged = isRecord(rest.ha) && normUrl(rest.ha.url) !== normUrl(d.store.get().ha.url)
     if (urlChanged && trimmed === '') {
       return bad('Saisissez à nouveau le jeton pour une nouvelle adresse Home Assistant')
@@ -205,6 +224,12 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     const parsed = appConfigSchema.safeParse(candidate)
     if (!parsed.success) return bad('Configuration invalide', issuesOf(parsed.error))
 
+    const refusal = await tryUpdate(parsed.data)
+    return refusal ? bad(refusal.error, refusal.issues) : publicConfig(d.store)
+  })
+
+  /** Entités connues de Home Assistant, pour vérifier les emplacements ; vide s'il est injoignable ou trop lent. */
+  const knownEntities = async (): Promise<Map<string, EntityInfo>> => {
     const known = new Map<string, EntityInfo>()
     try {
       let timer: ReturnType<typeof setTimeout> | undefined
@@ -217,16 +242,47 @@ export async function startEditorServer(d: EditorServerDeps): Promise<EditorServ
     } catch {
       // Home Assistant injoignable ou trop lent : aucune entité connue, le placement est accepté.
     }
-    const placement = placementIssues(parsed.data, known)
-    if (placement.length > 0) return bad(placement.join(' ; '), placement)
+    return known
+  }
 
+  /** Vérifie les emplacements puis enregistre ; renvoie la raison d'un refus, sinon null. */
+  const tryUpdate = async (cfg: AppConfig, checkEntities = true): Promise<{ error: string; issues: string[] } | null> => {
+    const placement = checkEntities ? placementIssues(cfg, await knownEntities()) : []
+    if (placement.length > 0) return { error: placement.join(' ; '), issues: placement }
     try {
-      await d.store.update(parsed.data)
+      await d.store.update(cfg)
     } catch (err) {
-      if (err instanceof ConfigValidationError) return bad('Configuration invalide', err.issues)
+      if (err instanceof ConfigValidationError) return { error: 'Configuration invalide', issues: err.issues }
       throw err
     }
-    return publicConfig(d.store)
+    return null
+  }
+
+  app.get('/api/config/export', async (_req, reply) => reply
+    .header('Content-Type', 'application/json; charset=utf-8')
+    .header('Content-Disposition', `attachment; filename="loupedeck-ha-${new Date().toLocaleDateString('sv-SE')}.json"`)
+    .header('Cache-Control', 'no-store')
+    .send(JSON.stringify(exportSettings(d.store), null, 2)))
+
+  /**
+   * Remplace tous les réglages par ceux d'un fichier. Le jeton n'en vient jamais : celui en place est gardé, sauf si
+   * l'adresse Home Assistant change (il partirait vers un autre serveur) ; il faut alors le saisir à nouveau.
+   */
+  app.post('/api/config/import', async (req, reply) => {
+    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+      return reply.code(415).send({ error: 'Content-Type application/json requis' })
+    }
+    const file = settingsOf(req.body)
+    if (!file) return reply.code(400).send({ error: 'Ce fichier ne contient pas de réglages Loupedeck HA' })
+    const current = d.store.get().ha
+    const sameHome = normUrl(file.ha.url) === normUrl(current.url)
+    const parsed = appConfigSchema.safeParse({ ...file.rest, ha: { ...file.ha, token: sameHome ? current.token : '' } })
+    if (!parsed.success) return reply.code(400).send({ error: 'Configuration invalide', issues: issuesOf(parsed.error) })
+    const refusal = await tryUpdate(parsed.data, sameHome)
+    if (refusal) return reply.code(400).send(refusal)
+    d.log.info('Réglages importés', { memeAdresse: sameHome })
+    const config = publicConfig(d.store)
+    return { config, tokenRequired: !config.ha.hasToken }
   })
 
   app.post('/api/config/undo', async (_req, reply) => {

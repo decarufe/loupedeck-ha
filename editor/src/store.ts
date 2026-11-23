@@ -42,11 +42,13 @@ export interface EditorState {
   previewVersion: number
   activeButton: number
   error: string | null
+  /** Résultat d'une opération réussie ; effacé par la modification suivante. */
+  notice: string | null
 }
 
 const initial = (): EditorState => ({
   config: null, entities: [], entitiesUnavailable: false, pendingEntity: null, pendingKind: null, drag: null, dragOver: null, dragSwap: false, mode: 'edit', selectedSlot: null,
-  status: null, selectedButton: 0, previewVersion: 0, activeButton: -1, error: null,
+  status: null, selectedButton: 0, previewVersion: 0, activeButton: -1, error: null, notice: null,
 })
 
 export const state = reactive<EditorState>(initial())
@@ -66,6 +68,7 @@ export function reset() {
 }
 
 function fail(e: unknown) {
+  state.notice = null
   if (e instanceof api.ApiError) {
     state.error = e.issues.length > 0 ? `${e.message} — ${e.issues.join(' ; ')}` : e.message
   } else {
@@ -118,6 +121,7 @@ export function save(mutator: (cfg: PublicConfig) => void, newToken?: string): P
     try {
       state.config = await api.putConfig(draft, newToken)
       state.error = null
+      state.notice = null
       state.previewVersion++
       return true
     } catch (e) {
@@ -438,8 +442,35 @@ export function undo(): Promise<void> {
     try {
       state.config = await api.undo()
       state.error = null
+      state.notice = null
       state.previewVersion++
     } catch (e) { fail(e) }
+  })
+}
+
+/** Importe un fichier de réglages (tout sauf le jeton). */
+export function importSettings(text: string): Promise<boolean> {
+  return enqueue(async () => {
+    try {
+      let file: unknown
+      try {
+        file = JSON.parse(text)
+      } catch {
+        throw new Error('Ce fichier ne contient pas de réglages Loupedeck HA')
+      }
+      const r = await api.importConfig(file)
+      state.config = r.config
+      state.error = null
+      state.selectedSlot = null
+      state.previewVersion++
+      state.notice = r.tokenRequired
+        ? 'Réglages importés. Saisissez le jeton Home Assistant dans les réglages : il ne fait pas partie du fichier.'
+        : 'Réglages importés. « Annuler » revient aux réglages précédents.'
+      return true
+    } catch (e) {
+      fail(e)
+      return false
+    }
   })
 }
 

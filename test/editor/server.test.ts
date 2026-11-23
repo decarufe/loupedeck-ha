@@ -190,6 +190,99 @@ describe('serveur de l’éditeur', () => {
     expect((await put(body(wrong))).statusCode).toBe(400)
   })
 
+  describe('export et import des réglages', () => {
+    const importFile = (payload: unknown) => request('POST', '/api/config/import', { payload, headers: editorHeaders() })
+    const exported = async () => (await get('/api/config/export')).json()
+
+    it('export_is_a_download_without_the_token', async () => {
+      await start()
+      const res = await get('/api/config/export')
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-disposition']).toMatch(/^attachment; filename="loupedeck-ha-\d{4}-\d{2}-\d{2}\.json"$/)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(res.body).not.toContain('SECRET123')
+      expect(res.body.toLowerCase()).not.toContain('token')
+      const { ha: h, ...rest } = store.get()
+      expect(res.json()).toMatchObject({ format: 'loupedeck-ha', config: { ...rest, ha: { url: h.url, allowSelfSigned: h.allowSelfSigned } } })
+    })
+
+    it('import_restores_everything_and_keeps_the_token_of_the_same_address', async () => {
+      await start()
+      const file = await exported()
+      const changed = structuredClone(store.get())
+      changed.device.brightness = 0.2
+      changed.buttons[0] = null
+      await store.update(changed)
+      const res = await importFile(file)
+      expect(res.statusCode).toBe(200)
+      expect(res.body).not.toContain('SECRET123')
+      expect(res.json()).toMatchObject({ tokenRequired: false, config: { device: { brightness: 1 }, ha: { hasToken: true } } })
+      expect(store.get().buttons[0]).not.toBeNull()
+      expect(store.get().ha.token).toBe('SECRET123')
+      expect((await post('/api/config/undo')).json().device.brightness).toBe(0.2)
+    })
+
+    it('import_never_sends_the_saved_token_to_another_address', async () => {
+      await start()
+      const file = await exported()
+      file.config.ha.url = 'https://ailleurs.example'
+      const res = await importFile(file)
+      expect(res.json()).toMatchObject({ tokenRequired: true, config: { ha: { url: 'https://ailleurs.example', hasToken: false } } })
+      expect(store.get().ha.token).toBe('')
+      await post('/api/config/undo')
+      expect(store.get().ha.token).toBe('SECRET123')
+    })
+
+    it('import_ignores_a_token_found_in_the_file', async () => {
+      await start()
+      // Copie à la main de config.json : configuration nue, jeton compris.
+      const raw = structuredClone(store.get())
+      raw.ha.token = 'JETON-DU-FICHIER'
+      expect((await importFile(raw)).statusCode).toBe(200)
+      expect(store.get().ha.token).toBe('SECRET123')
+    })
+
+    it('import_migrates_a_v1_configuration', async () => {
+      await start()
+      const keys = Array.from({ length: 12 }, () => null as unknown)
+      keys[0] = { entityId: 'light.salon' }
+      const dimmers = { knobTL: null, knobCL: null, knobBL: null, knobTR: null, knobCR: null, knobBR: null }
+      const { buttons: _b, ...rest } = structuredClone(store.get())
+      const lights = { type: 'lights', name: 'Lumières', color: '#FFB300', keys, dimmers }
+      const res = await importFile({ ...rest, version: 1, buttons: [lights, ...Array.from({ length: 7 }, () => null)] })
+      expect(res.statusCode).toBe(200)
+      expect((store.get().buttons[0] as CustomDashboard).keys[0]).toEqual({ kind: 'toggle', entityId: 'light.salon' })
+    })
+
+    it('import_refuses_anything_else_and_changes_nothing', async () => {
+      await start()
+      const before = structuredClone(store.get())
+      for (const bad of [[], {}, { format: 'autre', config: {} }, 'null']) {
+        const res = await importFile(bad)
+        expect(res.statusCode, JSON.stringify(bad)).toBe(400)
+        expect(res.json().error).toBe('Ce fichier ne contient pas de réglages Loupedeck HA')
+      }
+      const file = await exported()
+      file.config.buttons = []
+      const res = await importFile(file)
+      expect(res.statusCode).toBe(400)
+      expect(res.json().issues.length).toBeGreaterThan(0)
+      expect((await request('POST', '/api/config/import', { payload: file })).statusCode).toBe(403)
+      expect(store.get()).toEqual(before)
+    })
+
+    it('import_checks_entities_of_the_same_home', async () => {
+      await start()
+      ha.setEntity('sensor.t', '20', {})
+      const file = await exported()
+      file.config.buttons[0].keys[0] = { kind: 'toggle', entityId: 'sensor.t' }
+      expect((await importFile(file)).statusCode).toBe(400)
+      // Autre maison : les entités connues ici ne disent rien de la sienne.
+      file.config.ha.url = 'https://ailleurs.example'
+      expect((await importFile(file)).statusCode).toBe(200)
+    })
+  })
+
   it('undo_flow', async () => {
     await start()
     const cfg = structuredClone(store.get())
