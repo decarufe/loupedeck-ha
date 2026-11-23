@@ -2,6 +2,8 @@
   "name": "loupedeck-ha",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": "github:decarufe/loupedeck-ha",
   "type": "module",
   "engines": {
     "node": ">=24"
