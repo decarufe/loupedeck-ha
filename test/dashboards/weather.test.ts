@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FakeHa } from '../fakes/fake-ha.js'
 import { Actions } from '../../src/ha/actions.js'
-import { aggregateByDay, createWeatherDashboard, pickForecastType, WEATHER_REFRESH_MS } from '../../src/dashboards/weather.js'
+import { aggregateByDay, createWeatherDashboard, OUTLOOK_REFRESH_MS, pickForecastType, WEATHER_REFRESH_MS } from '../../src/dashboards/weather.js'
 import type { WeatherView } from '../../src/views.js'
 import type { WeatherDashboard } from '../../src/config/schema.js'
 import type { Forecast } from '../../src/ha/types.js'
+import type { GeoPoint, OutlookPoint } from '../../src/weather/openmeteo.js'
+
+const HOUR = 3_600_000
+const pt = (t: number, over: Partial<OutlookPoint> = {}): OutlookPoint => ({ t, temp: 1, feels: -3, mm: 0, kind: 'none', prob: null, ...over })
 
 function cfg(over: Partial<WeatherDashboard> = {}): WeatherDashboard {
   return { type: 'weather', name: 'Météo', color: '#3399FF', entityId: 'weather.home', ...over }
@@ -18,8 +22,10 @@ describe('tableau Météo', () => {
   let actions: Actions
   let render: ReturnType<typeof vi.fn>
   const today = () => new Date()
+  let outlookFn: ReturnType<typeof vi.fn<(loc: GeoPoint) => Promise<OutlookPoint[]>>>
 
   beforeEach(() => {
+    outlookFn = vi.fn(() => Promise.resolve([]))
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-11-20T15:00:00'))
     ha = new FakeHa()
@@ -32,7 +38,7 @@ describe('tableau Météo', () => {
     vi.useRealTimers()
   })
 
-  const make = (c = cfg()) => createWeatherDashboard(c, { ha, actions, requestRender: render })
+  const make = (c = cfg()) => createWeatherDashboard(c, { ha, actions, requestRender: render, fetchOutlook: outlookFn })
   const wv = (d: ReturnType<typeof make>) => d.view() as WeatherView
 
   it('pick_type', () => {
@@ -51,9 +57,9 @@ describe('tableau Météo', () => {
     expect(out).toEqual([{ date: '2026-11-21', condition: 'snowy', high: 3, low: -4 }])
   })
 
-  it('aggregate_caps_8', () => {
+  it('aggregate_caps_5', () => {
     const many = Array.from({ length: 12 }, (_, i) => fc(new Date(2026, 10, 21 + i, 12).toISOString(), i, i - 1))
-    expect(aggregateByDay(many, today())).toHaveLength(8)
+    expect(aggregateByDay(many, today())).toHaveLength(5)
   })
 
   it('view_current', () => {
@@ -186,6 +192,107 @@ describe('tableau Météo', () => {
     expect(ha.forecastCalls).toHaveLength(1)
     expect(wv(d).updated?.text).toMatch(/15 h 42/)
     d.deactivate()
+  })
+
+  describe('graphique des précipitations', () => {
+    const NOW = new Date('2026-11-20T15:00:00').getTime()
+    const ov = (d: ReturnType<typeof make>) => wv(d).outlook!
+
+    it('outlook_points_et_fenetre_apres_activate', async () => {
+      const points = [pt(NOW - 2 * HOUR, { mm: 1, kind: 'rain' }), pt(NOW + HOUR, { prob: 60, kind: 'snow' })]
+      outlookFn.mockResolvedValue(points)
+      const d = make()
+      d.activate()
+      await flush()
+      expect(outlookFn).toHaveBeenCalledWith({ latitude: 45.5, longitude: -73.5 })
+      expect(ov(d)).toEqual({ points, start: NOW - 8 * HOUR, now: NOW, end: NOW + 4 * HOUR, stale: false, message: null })
+      d.deactivate()
+    })
+
+    it('position_inconnue_sans_appel_au_service', async () => {
+      ha.location = null
+      const d = make()
+      d.activate()
+      await flush()
+      expect(ov(d).message).toBe('Position inconnue')
+      expect(ov(d).points).toEqual([])
+      expect(outlookFn).not.toHaveBeenCalled()
+      d.deactivate()
+    })
+
+    it('prevision_indisponible_sans_donnees_avant', async () => {
+      outlookFn.mockRejectedValue(new Error('panne'))
+      const d = make()
+      d.activate()
+      await flush()
+      expect(ov(d)).toMatchObject({ points: [], message: 'Prévision indisponible', stale: false })
+      d.deactivate()
+    })
+
+    it('erreur_apres_succes_garde_les_points_en_grise', async () => {
+      const points = [pt(NOW - HOUR, { mm: 1, kind: 'rain' })]
+      outlookFn.mockResolvedValueOnce(points)
+      const d = make()
+      d.activate()
+      await flush()
+      outlookFn.mockRejectedValue(new Error('panne'))
+      await vi.advanceTimersByTimeAsync(OUTLOOK_REFRESH_MS)
+      expect(outlookFn).toHaveBeenCalledTimes(2)
+      expect(ov(d)).toMatchObject({ points, message: null, stale: true })
+      d.deactivate()
+    })
+
+    it('rafraichi_toutes_les_15_minutes_et_au_toucher_actualiser', async () => {
+      const d = make()
+      d.activate()
+      await flush()
+      expect(outlookFn).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(OUTLOOK_REFRESH_MS)
+      expect(outlookFn).toHaveBeenCalledTimes(2)
+      d.handle({ type: 'tap', target: { kind: 'strip', side: 'right', zone: 0 } })
+      await flush()
+      expect(outlookFn).toHaveBeenCalledTimes(3)
+      d.deactivate()
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('resultat_tardif_ignore_apres_deactivate', async () => {
+      let release!: (p: OutlookPoint[]) => void
+      outlookFn.mockImplementation(() => new Promise<OutlookPoint[]>((r) => { release = r }))
+      const d = make()
+      d.activate()
+      await flush()
+      d.deactivate()
+      render.mockClear()
+      release([pt(NOW)])
+      await flush()
+      expect(ov(d).points).toEqual([])
+      expect(render).not.toHaveBeenCalled()
+    })
+
+    it('reessaie_quand_home_assistant_revient_en_ligne', async () => {
+      outlookFn.mockRejectedValueOnce(new Error('panne'))
+      const d = make()
+      d.activate()
+      await flush()
+      expect(ov(d).message).toBe('Prévision indisponible')
+      outlookFn.mockResolvedValue([pt(NOW - HOUR, { mm: 1, kind: 'rain' })])
+      ha.setStatus({ state: 'connecting', reason: null })
+      ha.setStatus({ state: 'online', reason: null })
+      await flush()
+      expect(ov(d)).toMatchObject({ message: null, stale: false })
+      expect(ov(d).points).toHaveLength(1)
+      d.deactivate()
+    })
+
+    it('pas_de_graphique_sans_entite_meteo', async () => {
+      const d = make(cfg({ entityId: null }))
+      d.activate()
+      await flush()
+      expect(wv(d).outlook ?? null).toBeNull()
+      expect(outlookFn).not.toHaveBeenCalled()
+      d.deactivate()
+    })
   })
 
   it('other_touches_do_not_refresh', async () => {
