@@ -408,6 +408,19 @@ describe('Navigator', () => {
       expect(nav.activeIndex()).toBe(0)
       expect(device.vibrate).not.toHaveBeenCalled()
     })
+    it('ha_offline_ends_the_alert_after_calm', async () => {
+      fire(S3)
+      ha.setStatus({ state: 'offline', reason: 'network' })
+      await adv(30_000)
+      expect(nav.activeIndex()).toBe(0)
+    })
+    it('button_press_on_guarded_alert_hides_the_old_image', () => {
+      turn(); fire(S3)
+      expect(nav.activeIndex()).toBe(0)
+      press(3)
+      expect(nav.activeIndex()).toBe(3)
+      expect(made[3].prepareAlert).toHaveBeenCalledTimes(1)
+    })
     it('dispose_during_alert_leaves_no_timers', () => {
       fire(S3); nav.dispose()
       expect(vi.getTimerCount()).toBe(0)

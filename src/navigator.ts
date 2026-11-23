@@ -96,6 +96,8 @@ export class Navigator {
     })
     this.offs = [
       this.ha.onEntities(e => this.monitor.update(e)),
+      // Home Assistant injoignable : les capteurs gardent leur dernier état ; on les tient pour inconnus.
+      this.ha.onStatus(st => { if (st.state === 'offline') this.monitor.update({}) }),
       this.device.onInput(e => this.handle(e)),
       this.device.onStatus(s => {
         if (s === 'connected') {
@@ -209,16 +211,17 @@ export class Navigator {
     this.emitActive()
   }
 
-  private switchTo(i: number): void {
+  private switchTo(i: number, alert = false): void {
     if (i === this.active || !this.dashboards[i]) return
-    this.show(i, false)
+    this.show(i, alert)
     this.persist(i)
   }
 
   /** Bouton rond pressé par l'utilisateur : la page choisie devient sa page d'accueil. */
   private userButton(id: number): void {
     if (!this.dashboards[id]) return
-    if (id !== this.active) this.switchTo(id)
+    // Un bouton en alerte ou en rappel : l'image gardée peut dater de plusieurs heures.
+    if (id !== this.active) this.switchTo(id, this.monitor.led(id) !== 'none')
     else if (!this.autoOpened) return
     else this.persist(id)
     this.home = id
