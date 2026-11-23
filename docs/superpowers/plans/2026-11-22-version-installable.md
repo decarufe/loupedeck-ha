@@ -309,44 +309,20 @@ publish: { provider: github, owner: decarufe, repo: loupedeck-ha, releaseType: r
 ### Task 7 : Workflow GitHub Actions
 
 **Files :**
-- Create : `.github/workflows/build.yml`
+- Create : `.github/workflows/build.yml`, `.github/dependabot.yml`
 
-- [ ] **Step 1 : Écrire le workflow**
-```yaml
-name: build
-on:
-  pull_request: { branches: [main] }
-  push: { branches: [main] }
-permissions: { contents: read }
-jobs:
-  check:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 26, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec tsc -p . --noEmit
-      - run: pnpm test
-      - run: pnpm run build
-  release:
-    if: github.event_name == 'push'
-    needs: check
-    runs-on: windows-latest
-    permissions: { contents: write }
-    concurrency: { group: release, cancel-in-progress: false }
-    steps:
-      - (checkout, pnpm, node, install : comme check)
-      - run: pnpm run build
-      - run: pnpm exec electron-builder --win --publish always -c.extraMetadata.version=0.2.${{ github.run_number }}
-        env: { GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} }
-```
-(Prendre les dernières versions majeures des actions disponibles au moment de l'écriture.)
+- [ ] **Step 1 : Écrire le workflow**, en trois jobs (durcissement demandé par la revue de sécurité : le code des dépendances ne voit jamais de jeton capable de publier) :
+  - `check` (PR et push, Windows) : checkout (`persist-credentials: false`), pnpm, Node 26 avec cache pnpm, `pnpm install --frozen-lockfile`, `pnpm exec tsc -p . --noEmit`, `pnpm test`, `pnpm run build`.
+  - `package` (push sur `main` seulement, `needs: check`, `permissions: contents: read`, Windows) : mêmes préparatifs, `pnpm run build`, `pnpm exec electron-builder --win --publish never -c.extraMetadata.version=0.2.${{ github.run_number }}`, puis `actions/upload-artifact` de `release/LoupedeckHA-Setup-*.exe`, `release/LoupedeckHA-Setup-*.exe.blockmap` et `release/latest.yml` (`if-no-files-found: error`).
+  - `publish` (`needs: package`, `permissions: contents: write`, `concurrency: { group: release, cancel-in-progress: false }`, Ubuntu) : aucun checkout ni code de dépendance ; `actions/download-artifact`, puis `gh release create v0.2.${{ github.run_number }} <fichiers> --repo ${{ github.repository }} --target ${{ github.sha }} --title "v0.2.${{ github.run_number }}" --generate-notes` avec `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}`.
+  - Le `latest.yml` produit par `--publish never` nomme `LoupedeckHA-Setup-<version>.exe`, comme l'asset de la Release ; le bloc `publish:` d'`electron-builder.yml` reste en place, car il génère `resources/app-update.yml` (provider github, `decarufe/loupedeck-ha`) lu par electron-updater.
+  - Chaque `uses:` est épinglé sur le SHA complet du commit de sa version, version en commentaire (`# v7.0.1`) ; SHA obtenus par `gh api repos/<owner>/<repo>/git/ref/tags/<tag>`, tags annotés déréférencés jusqu'au commit.
 
-- [ ] **Step 2 : Vérifier la syntaxe** — `pnpm dlx @action-validator/cli .github/workflows/build.yml` (ou équivalent) → aucune erreur.
+- [ ] **Step 2 : `.github/dependabot.yml`** — `package-ecosystem: github-actions`, `directory: /`, `interval: weekly`, pour tenir les SHA à jour.
 
-- [ ] **Step 3 : Commit** `ci: vérification des PR et release à chaque fusion sur main`.
+- [ ] **Step 3 : Vérifier la syntaxe** — `pnpm dlx @action-validator/cli .github/workflows/build.yml` → aucune erreur (cet outil ne connaît pas le format Dependabot : ne pas l'appliquer à `dependabot.yml`).
+
+- [ ] **Step 4 : Commit** `ci: vérification des PR et release à chaque fusion sur main`.
 
 ---
 
