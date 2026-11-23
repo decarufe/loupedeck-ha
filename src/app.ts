@@ -2,6 +2,7 @@ import type { AppConfig } from './config/schema.js'
 import { StateStore } from './config/state.js'
 import { ConfigStore } from './config/store.js'
 import { createLoupedeckFactory, DeviceLink, type LoupedeckLike } from './device/link.js'
+import { createConsoleReleaser, runCommand, type ConsoleReleaser } from './device/release.js'
 import { startEditorServer, type EditorServer } from './editor/server.js'
 import { Actions } from './ha/actions.js'
 import { HaClient } from './ha/client.js'
@@ -21,6 +22,8 @@ export interface AppDeps {
   log: Logger
   createDevice?: (path: string | null) => () => Promise<LoupedeckLike>
   createHa?: (ha: AppConfig['ha'], log: Logger) => HaPort
+  /** Ferme les logiciels qui tiennent la console (défaut : tasklist et taskkill de Windows). */
+  release?: ConsoleReleaser
   /** Démarre le serveur de l'éditeur (défaut : oui). */
   startEditor?: boolean
   /** Dossier de l'éditeur compilé (défaut : `<dépôt>/editor/dist`). */
@@ -102,6 +105,7 @@ export async function createApp(d: AppDeps): Promise<App> {
     // Abonnements posés avant applyConfig : le choix du tableau actif initial est aussi annoncé à l'éditeur.
     nav.onActiveChange((button) => editor?.notify({ type: 'active', button }))
     link.onStatus(() => editor?.notify({ type: 'status' }))
+    link.onProblem(() => editor?.notify({ type: 'status' }))
     nav.onRendered(() => notifyPreview())
     nav.applyConfig(cfg)
   }
@@ -169,6 +173,7 @@ export async function createApp(d: AppDeps): Promise<App> {
       editor = await startEditorServer({
         store, ha: () => proxy, navigator: () => nav, device: () => link,
         port: store.get().editor.port, staticDir, log,
+        release: d.release ?? createConsoleReleaser({ run: runCommand, link: () => link, log }),
       })
     } catch (err) {
       // Le port est peut-être pris : la console et Home Assistant continuent de fonctionner sans éditeur.

@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# Les fusions sur main passent une à la fois : deux runs simultanés calculeraient le même numéro de version.
+# GitHub peut annuler un run en attente quand un plus récent arrive : sans conséquence, le plus récent contient
+# ses commits. Les vérifications de PR ne sont pas concernées (un groupe par run).
+concurrency:
+  group: build-${{ github.event_name == 'push' && 'release' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: windows-latest
@@ -26,11 +33,45 @@ jobs:
       - run: pnpm test
       - run: pnpm run build
 
+  # Prochaine version : dernière étiquette publiée + 1. Pas github.run_number, que les vérifications de PR
+  # incrémentent aussi (les versions sautaient de 2). Job à part : aucun checkout, jeton en lecture seule.
+  version:
+    if: github.event_name == 'push'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - id: next
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          SERIES: '0.2'
+        run: |
+          set -euo pipefail
+          last=$(gh api --paginate "repos/$REPO/git/matching-refs/tags/v$SERIES." --jq '.[].ref' \
+            | sed -nE 's#^refs/tags/v[0-9]+[.][0-9]+[.]([0-9]+)$#\1#p' | sort -n | tail -n 1)
+          if [ -n "$last" ]; then
+            # Relancer un ancien run ne doit pas republier du vieux code sous un numéro plus élevé.
+            status=$(gh api "repos/$REPO/compare/v$SERIES.$last...$SHA" --jq .status)
+            if [ "$status" != ahead ]; then
+              echo "::notice::Commit déjà publié ou dépassé par v$SERIES.$last ($status) : aucune nouvelle version."
+              exit 0
+            fi
+          fi
+          version="$SERIES.$(( ${last:--1} + 1 ))"
+          echo "Version $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   # Fabrique l'installateur sans aucun droit d'écriture : le code des dépendances ne voit jamais de jeton
   # capable de publier.
   package:
-    if: github.event_name == 'push'
-    needs: check
+    if: needs.version.outputs.version != ''
+    needs: version
     runs-on: windows-latest
     permissions:
       contents: read
@@ -45,11 +86,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
-      # Version 0.2.<numéro du run>, écrite dans le paquet et dans latest.yml.
+      # Version écrite dans le paquet et dans latest.yml.
       # bash, pas PowerShell (shell par défaut sous Windows) : PowerShell coupe « -c.extraMetadata… »
       # en « -c » et « .extraMetadata… », et electron-builder prend alors « -c » pour un fichier de config.
-      - run: pnpm exec electron-builder --win --publish never -c.extraMetadata.version=0.2.${{ github.run_number }}
+      - run: pnpm exec electron-builder --win --publish never -c.extraMetadata.version="$VERSION"
         shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installer
@@ -61,37 +104,24 @@ jobs:
 
   # Publie la Release : aucun checkout, aucun code de dépendance, seulement les fichiers produits plus haut.
   publish:
-    needs: package
+    needs: [version, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # Une seule publication à la fois. GitHub peut annuler un publish en attente quand un plus récent
-    # arrive : sans conséquence, la version la plus récente est publiée.
-    concurrency:
-      group: release
-      cancel-in-progress: false
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: installer
           path: installer
-      # Si une version plus élevée est déjà publiée (runs terminés dans le désordre), celle-ci ne devient
-      # pas « Latest » : electron-updater suit la Release marquée Latest.
+      # Échoue si l'étiquette existe déjà (publish relancé après une version plus récente) : rien n'est écrasé.
       - name: Publier la Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          RUN: ${{ github.run_number }}
+          VERSION: ${{ needs.version.outputs.version }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          highest=$(gh release list --repo "$REPO" --limit 20 --json tagName \
-            --jq '[.[].tagName | select(test("^v[0-9]+[.][0-9]+[.][0-9]+$")) | split(".")[2] | tonumber] | max // 0')
-          latest_flag=()
-          if [ "$highest" -gt "$RUN" ]; then
-            echo "Version plus élevée déjà publiée (segment $highest > $RUN) : --latest=false"
-            latest_flag=(--latest=false)
-          fi
-          gh release create "v0.2.$RUN" installer/* --repo "$REPO" --target "$SHA" \
-            --title "v0.2.$RUN" --generate-notes "${latest_flag[@]}"
+          gh release create "v$VERSION" installer/* --repo "$REPO" --target "$SHA" \
+            --title "v$VERSION" --generate-notes

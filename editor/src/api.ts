@@ -1,4 +1,6 @@
 import type { AppConfig } from '@shared/config/schema'
+import type { DeviceProblem } from '@shared/device/link'
+import type { ConsoleHolder, ForceResult } from '@shared/device/release'
 import type { EntityInfo } from '@shared/shared/placement'
 
 /** Contrat de src/editor/server.ts (copié ici : ce module est node-only). */
@@ -9,7 +11,7 @@ export type PublicConfig = Omit<AppConfig, 'ha'> & {
 /** `preview` : la console a été redessinée, l'aperçu doit être rechargé (au plus une fois par seconde). */
 export type LiveMessage = { type: 'config' } | { type: 'active'; button: number } | { type: 'status' } | { type: 'entities' } | { type: 'preview' }
 export interface Status {
-  device: { status: string; firmware: string | null }
+  device: { status: string; firmware: string | null; problem: DeviceProblem | null }
   ha: { state: string; [k: string]: unknown }
   activeButton: number
 }
@@ -49,6 +51,19 @@ export function putConfig(cfg: PublicConfig, newToken?: string) {
 }
 
 export const undo = () => request<PublicConfig>('/api/config/undo', { method: 'POST', headers: WRITE_HEADERS, body: '{}' })
+export type { ConsoleHolder, ForceResult }
+/** Logiciels connus, en cours d'exécution, qui peuvent tenir la console. */
+export const getHolders = () => request<ConsoleHolder[]>('/api/console/holders')
+/** Ferme ces logiciels puis prend la console ; `includeAgent` : aussi l'agent Logi Options+. */
+export const forceConsole = (includeAgent: boolean) =>
+  request<ForceResult>('/api/console/force', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify({ includeAgent }) })
+export const EXPORT_URL = '/api/config/export'
+/**
+ * Remplace tous les réglages par ceux d'un fichier. `tokenRequired` : aucun jeton pour l'adresse importée ;
+ * `tlsKept` : le fichier acceptait un certificat auto-signé, ce qu'un import n'active jamais.
+ */
+export const importConfig = (file: unknown) =>
+  request<{ config: PublicConfig; tokenRequired: boolean; tlsKept: boolean }>('/api/config/import', { method: 'POST', headers: WRITE_HEADERS, body: JSON.stringify(file) })
 export const getEntities = () => request<EntityInfo[]>('/api/entities')
 export const getStatus = () => request<Status>('/api/status')
 export const pageCommand = (button: number, command: 'refresh' | 'reload') =>

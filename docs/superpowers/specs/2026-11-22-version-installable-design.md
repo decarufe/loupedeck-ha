@@ -156,7 +156,8 @@ déjà écrite et éprouvée.
 
 ### 7.4 Version
 
-- Une fusion sur `main` = une release. Version **`0.2.<github.run_number>`** du workflow de publication,
+- Une fusion sur `main` = une release. Version **`0.2.<dernière étiquette publiée + 1>`**, calculée par le workflow
+  (pas `github.run_number` : les vérifications de PR l'incrémentent aussi, les versions sautaient de 2) et
   écrite dans `package.json` par le workflow avant la fabrication (le fichier commité garde une version de
   base, par ex. `0.2.0`) *(choix de Claude : aucune modification manuelle avant de fusionner)*.
 - La Release GitHub est étiquetée `v0.2.<numéro>` et pointe sur le commit fusionné.
@@ -189,10 +190,10 @@ Fichier `.github/workflows/build.yml` (ou deux fichiers) :
 - Job `check` (Windows) : `pnpm install --frozen-lockfile`, `pnpm exec tsc -p . --noEmit`, `pnpm test`,
   `pnpm run build`.
 - Job `release` (push sur `main` seulement, après `check`) : écrit la version, fabrique l'installateur,
-  publie la Release `v0.2.<run_number>` avec l'installateur, le `.blockmap` et `latest.yml`. La publication
+  publie la Release `v0.2.<n>` avec l'installateur, le `.blockmap` et `latest.yml`. La publication
   est faite par electron-builder (`--publish always`) ou par une étape dédiée ; un seul mécanisme.
-- Concurrence : deux fusions rapprochées ne doivent pas publier dans le désordre (`concurrency` sur le job de
-  publication).
+- Concurrence : deux fusions rapprochées ne doivent pas publier dans le désordre (`concurrency` sur le
+  workflow : le numéro est calculé puis publié par un seul run à la fois).
 
 ### 7.9 README
 

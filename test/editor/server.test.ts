@@ -8,6 +8,7 @@ import WebSocket from 'ws'
 import { defaultConfig, type AppConfig, type CameraDashboard, type CustomDashboard } from '../../src/config/schema.js'
 import { ConfigStore } from '../../src/config/store.js'
 import { DeviceLink } from '../../src/device/link.js'
+import type { ConsoleReleaser, ForceResult } from '../../src/device/release.js'
 import { startEditorServer, type LiveMessage } from '../../src/editor/server.js'
 import { Actions } from '../../src/ha/actions.js'
 import { CameraImageError } from '../../src/ha/types.js'
@@ -36,10 +37,11 @@ describe('serveur de l’éditeur', () => {
   let link: DeviceLink
   let editor: Editor | undefined
   let statics: string
+  let release: ConsoleReleaser | undefined
 
   const start = async (staticDir = statics) => {
     editor = await startEditorServer({
-      store, ha: () => ha, navigator: () => nav, device: () => link, port: 0, staticDir, log: silent,
+      store, ha: () => ha, navigator: () => nav, device: () => link, port: 0, staticDir, log: silent, release,
     })
     return editor
   }
@@ -92,6 +94,7 @@ describe('serveur de l’éditeur', () => {
   afterEach(async () => {
     await editor?.close()
     editor = undefined
+    release = undefined
     nav?.dispose()
     actions.dispose()
     await fs.rm(dir, { recursive: true, force: true })
@@ -190,6 +193,177 @@ describe('serveur de l’éditeur', () => {
     expect((await put(body(wrong))).statusCode).toBe(400)
   })
 
+  describe('export et import des réglages', () => {
+    const importFile = (payload: unknown) => request('POST', '/api/config/import', { payload, headers: editorHeaders() })
+    const exported = async () => (await get('/api/config/export')).json()
+
+    it('export_is_a_download_without_the_token', async () => {
+      await start()
+      const res = await get('/api/config/export')
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-disposition']).toMatch(/^attachment; filename="loupedeck-ha-\d{4}-\d{2}-\d{2}\.json"$/)
+      expect(res.headers['cache-control']).toBe('no-store')
+      expect(res.body).not.toContain('SECRET123')
+      expect(res.body.toLowerCase()).not.toContain('token')
+      const { ha: h, device, ...rest } = store.get()
+      expect(res.json()).toMatchObject({ format: 'loupedeck-ha', config: { ...rest, device: { brightness: device.brightness }, ha: { url: h.url, allowSelfSigned: h.allowSelfSigned } } })
+    })
+
+    it('import_restores_everything_and_keeps_the_token_of_the_same_address', async () => {
+      await start()
+      const file = await exported()
+      const changed = structuredClone(store.get())
+      changed.device.brightness = 0.2
+      changed.buttons[0] = null
+      await store.update(changed)
+      const res = await importFile(file)
+      expect(res.statusCode).toBe(200)
+      expect(res.body).not.toContain('SECRET123')
+      expect(res.json()).toMatchObject({ tokenRequired: false, config: { device: { brightness: 1 }, ha: { hasToken: true } } })
+      expect(store.get().buttons[0]).not.toBeNull()
+      expect(store.get().ha.token).toBe('SECRET123')
+      expect((await post('/api/config/undo')).json().device.brightness).toBe(0.2)
+    })
+
+    it('import_never_sends_the_saved_token_to_another_address', async () => {
+      await start()
+      const file = await exported()
+      file.config.ha.url = 'https://ailleurs.example'
+      const res = await importFile(file)
+      expect(res.json()).toMatchObject({ tokenRequired: true, config: { ha: { url: 'https://ailleurs.example', hasToken: false } } })
+      expect(store.get().ha.token).toBe('')
+      await post('/api/config/undo')
+      expect(store.get().ha.token).toBe('SECRET123')
+    })
+
+    it('import_never_turns_certificate_checks_off', async () => {
+      await start()
+      const file = await exported()
+      file.config.ha.allowSelfSigned = true
+      expect((await importFile(file)).json()).toMatchObject({ tokenRequired: false, tlsKept: true, config: { ha: { allowSelfSigned: false } } })
+      // Une fois le certificat auto-signé accepté ici, l'import le garde ; il peut toujours durcir.
+      const relaxed = structuredClone(store.get())
+      relaxed.ha.allowSelfSigned = true
+      await store.update(relaxed)
+      expect((await importFile(file)).json()).toMatchObject({ tlsKept: false, config: { ha: { allowSelfSigned: true } } })
+      file.config.ha.allowSelfSigned = false
+      expect((await importFile(file)).json()).toMatchObject({ tlsKept: false, config: { ha: { allowSelfSigned: false } } })
+      // Nouvelle adresse : un jeton va y être saisi, la case reste à cocher par l'utilisateur.
+      file.config.ha = { url: 'https://ailleurs.example', allowSelfSigned: true }
+      await store.update(relaxed)
+      expect((await importFile(file)).json()).toMatchObject({ tokenRequired: true, tlsKept: true, config: { ha: { allowSelfSigned: false } } })
+    })
+
+    it('import_keeps_the_port_of_this_computer', async () => {
+      await start()
+      const cfg = structuredClone(store.get())
+      cfg.device.path = 'COM4'
+      await store.update(cfg)
+      const file = await exported()
+      expect(file.config.device).toEqual({ brightness: 1 })
+      file.config.device = { path: '\\\\serveur\\partage', brightness: 0.4 }
+      expect((await importFile(file)).statusCode).toBe(200)
+      expect(store.get().device).toEqual({ path: 'COM4', brightness: 0.4 })
+    })
+
+    it('import_ignores_a_token_found_in_the_file', async () => {
+      await start()
+      // Copie à la main de config.json : configuration nue, jeton compris.
+      const raw = structuredClone(store.get())
+      raw.ha.token = 'JETON-DU-FICHIER'
+      expect((await importFile(raw)).statusCode).toBe(200)
+      expect(store.get().ha.token).toBe('SECRET123')
+    })
+
+    it('import_migrates_a_v1_configuration', async () => {
+      await start()
+      const keys = Array.from({ length: 12 }, () => null as unknown)
+      keys[0] = { entityId: 'light.salon' }
+      const dimmers = { knobTL: null, knobCL: null, knobBL: null, knobTR: null, knobCR: null, knobBR: null }
+      const { buttons: _b, ...rest } = structuredClone(store.get())
+      const lights = { type: 'lights', name: 'Lumières', color: '#FFB300', keys, dimmers }
+      const res = await importFile({ ...rest, version: 1, buttons: [lights, ...Array.from({ length: 7 }, () => null)] })
+      expect(res.statusCode).toBe(200)
+      expect((store.get().buttons[0] as CustomDashboard).keys[0]).toEqual({ kind: 'toggle', entityId: 'light.salon' })
+    })
+
+    it('import_refuses_anything_else_and_changes_nothing', async () => {
+      await start()
+      const before = structuredClone(store.get())
+      for (const bad of [[], {}, { format: 'autre', config: {} }, 'null']) {
+        const res = await importFile(bad)
+        expect(res.statusCode, JSON.stringify(bad)).toBe(400)
+        expect(res.json().error).toBe('Ce fichier ne contient pas de réglages Loupedeck HA')
+      }
+      const file = await exported()
+      file.config.buttons = []
+      const res = await importFile(file)
+      expect(res.statusCode).toBe(400)
+      expect(res.json().issues.length).toBeGreaterThan(0)
+      expect((await request('POST', '/api/config/import', { payload: file })).statusCode).toBe(403)
+      expect(store.get()).toEqual(before)
+    })
+
+    it('import_checks_entities_of_the_same_home', async () => {
+      await start()
+      ha.setEntity('sensor.t', '20', {})
+      const file = await exported()
+      file.config.buttons[0].keys[0] = { kind: 'toggle', entityId: 'sensor.t' }
+      expect((await importFile(file)).statusCode).toBe(400)
+      // Autre maison : les entités connues ici ne disent rien de la sienne.
+      file.config.ha.url = 'https://ailleurs.example'
+      expect((await importFile(file)).statusCode).toBe(200)
+    })
+  })
+
+  describe('libérer la console', () => {
+    const RESULT: ForceResult = { connected: true, reason: null, killed: ['LogiPluginService.exe'], failed: [], agentRunning: true }
+    const force = (payload: unknown, headers = editorHeaders()) => request('POST', '/api/console/force', { payload, headers })
+
+    it('lists_holders_and_forces', async () => {
+      const holders = [{ name: 'LogiPluginService.exe', pid: 7, label: 'Logi Plugin Service', agent: false }]
+      const forceFn = vi.fn(async () => RESULT)
+      release = { holders: async () => holders, force: forceFn }
+      await start()
+      expect((await get('/api/console/holders')).json()).toEqual(holders)
+      expect((await force({})).json()).toEqual(RESULT)
+      expect(forceFn).toHaveBeenLastCalledWith({ includeAgent: false })
+      await force({ includeAgent: true })
+      expect(forceFn).toHaveBeenLastCalledWith({ includeAgent: true })
+      // Seul un vrai booléen ferme aussi Logi Options+.
+      await force({ includeAgent: 'oui', name: 'explorer.exe' })
+      expect(forceFn).toHaveBeenLastCalledWith({ includeAgent: false })
+    })
+
+    it('another_site_cannot_force', async () => {
+      const forceFn = vi.fn(async () => RESULT)
+      release = { holders: async () => [], force: forceFn }
+      await start()
+      expect((await force({}, hostHeader() as never)).statusCode).toBe(403)
+      expect((await force({}, { ...editorHeaders(), origin: 'https://evil.example' } as never)).statusCode).toBe(403)
+      expect(forceFn).not.toHaveBeenCalled()
+    })
+
+    it('failure_is_reported', async () => {
+      release = { holders: async () => { throw new Error('x') }, force: async () => { throw new Error('x') } }
+      await start()
+      const res = await force({})
+      expect(res.statusCode).toBe(500)
+      expect(res.json()).toEqual({ error: 'Impossible de lister ou de fermer les programmes' })
+      expect((await get('/api/console/holders')).statusCode).toBe(500)
+    })
+
+    it('status_tells_why_the_console_is_not_connected', async () => {
+      await start()
+      const b = new DeviceLink({ createDevice: async () => { throw new Error('Opening COM4: Access denied') }, log: silent })
+      link = b
+      b.start()
+      await vi.waitFor(() => expect(b.problem()).toBe('busy'))
+      expect((await get('/api/status')).json().device).toEqual({ status: 'disconnected', firmware: null, problem: 'busy' })
+      await b.stop()
+    })
+  })
+
   it('undo_flow', async () => {
     await start()
     const cfg = structuredClone(store.get())
@@ -264,7 +438,7 @@ describe('serveur de l’éditeur', () => {
     await start()
     const res = await get('/api/status')
     expect(res.json()).toEqual({
-      device: { status: 'disconnected', firmware: null },
+      device: { status: 'disconnected', firmware: null, problem: null },
       ha: { state: 'online', reason: null },
       activeButton: 0,
     })

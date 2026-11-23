@@ -7,7 +7,7 @@ import { canPlace, type EntityInfo, type SlotKind } from '@shared/shared/placeme
 import { changeKind, fitsSlot, newTile, placeOnTile, TILE_KIND_LABELS, type SlotType } from '@shared/shared/tiles'
 import type { InputEvent } from '@shared/device/input'
 import * as api from './api'
-import type { LiveMessage, PublicConfig, Status } from './api'
+import type { ConsoleHolder, ForceResult, LiveMessage, PublicConfig, Status } from './api'
 
 /** Emplacement d'une page Bouton custom : une touche (0-11) ou la zone latérale d'une molette. */
 export type SlotTarget = { kind: 'key'; index: number } | { kind: 'strip'; knob: KnobId }
@@ -42,11 +42,13 @@ export interface EditorState {
   previewVersion: number
   activeButton: number
   error: string | null
+  /** Résultat d'une opération réussie ; effacé par la modification suivante. */
+  notice: string | null
 }
 
 const initial = (): EditorState => ({
   config: null, entities: [], entitiesUnavailable: false, pendingEntity: null, pendingKind: null, drag: null, dragOver: null, dragSwap: false, mode: 'edit', selectedSlot: null,
-  status: null, selectedButton: 0, previewVersion: 0, activeButton: -1, error: null,
+  status: null, selectedButton: 0, previewVersion: 0, activeButton: -1, error: null, notice: null,
 })
 
 export const state = reactive<EditorState>(initial())
@@ -66,6 +68,7 @@ export function reset() {
 }
 
 function fail(e: unknown) {
+  state.notice = null
   if (e instanceof api.ApiError) {
     state.error = e.issues.length > 0 ? `${e.message} — ${e.issues.join(' ; ')}` : e.message
   } else {
@@ -118,6 +121,7 @@ export function save(mutator: (cfg: PublicConfig) => void, newToken?: string): P
     try {
       state.config = await api.putConfig(draft, newToken)
       state.error = null
+      state.notice = null
       state.previewVersion++
       return true
     } catch (e) {
@@ -184,14 +188,14 @@ export async function placeKind(target: SlotTarget, kind: TileKind): Promise<boo
   return ok
 }
 
-/** Modifie une touche : `patch` remplace des champs ; une chaîne vide supprime `label`, `icon` ou `color`. */
-export function updateTile(target: SlotTarget, patch: Record<string, unknown>): Promise<boolean> {
+/** Modifie une touche : `patch` remplace des champs (une fonction le calcule depuis la touche à jour, après les sauvegardes en file) ; une chaîne vide supprime `label`, `icon` ou `color`. */
+export function updateTile(target: SlotTarget, patch: Record<string, unknown> | ((tile: Tile) => Record<string, unknown>)): Promise<boolean> {
   const button = state.selectedButton
   return save((cfg) => {
     const access = slotAccess(cfg, button, target)
     const tile = access?.get()
     if (!access || !tile) return
-    const next = { ...tile, ...patch } as Record<string, unknown>
+    const next = { ...tile, ...(typeof patch === 'function' ? patch(tile) : patch) } as Record<string, unknown>
     for (const k of ['label', 'icon', 'color']) if (typeof next[k] === 'string' && (next[k] as string).trim() === '') delete next[k]
     access.set(next as unknown as Tile)
   })
@@ -403,6 +407,29 @@ export async function tryInput(e: InputEvent): Promise<void> {
   } catch (err) { fail(err) }
 }
 
+// ---------- console prise par un autre programme ----------
+
+export async function loadHolders(): Promise<ConsoleHolder[]> {
+  // Simple information : un échec n'est pas une erreur d'édition.
+  return api.getHolders().catch(() => [])
+}
+
+export async function forceConsole(includeAgent: boolean): Promise<ForceResult | null> {
+  try {
+    const r = await api.forceConsole(includeAgent)
+    state.error = null
+    if (r.connected) {
+      const n = r.killed.length
+      state.notice = `Console connectée.${n === 0 ? '' : ` ${n === 1 ? 'Programme fermé' : 'Programmes fermés'} : ${r.killed.join(', ')}.`}`
+    }
+    await loadStatus()
+    return r
+  } catch (e) {
+    fail(e)
+    return null
+  }
+}
+
 // ---------- entités : icône et valeur affichées dans la palette ----------
 
 export function entityIcon(e: EntityInfo): string {
@@ -438,8 +465,41 @@ export function undo(): Promise<void> {
     try {
       state.config = await api.undo()
       state.error = null
+      state.notice = null
       state.previewVersion++
     } catch (e) { fail(e) }
+  })
+}
+
+/** Adresse sans rien qui puisse tromper sur le serveur réel (« https://connu@autre »). */
+function shownAddress(url: string): string {
+  try { return new URL(url).origin } catch { return url }
+}
+
+/** Importe un fichier de réglages (tout sauf le jeton). */
+export function importSettings(text: string): Promise<boolean> {
+  return enqueue(async () => {
+    try {
+      let file: unknown
+      try {
+        file = JSON.parse(text)
+      } catch {
+        throw new Error('Ce fichier ne contient pas de réglages Loupedeck HA')
+      }
+      const r = await api.importConfig(file)
+      state.config = r.config
+      state.error = null
+      state.selectedSlot = null
+      state.previewVersion++
+      const tls = r.tlsKept ? ' « Accepter un certificat auto-signé » n’a pas été repris : cochez-le si vous en avez besoin.' : ''
+      state.notice = r.tokenRequired
+        ? `Réglages importés. L’adresse Home Assistant est ${shownAddress(r.config.ha.url)} : saisissez son jeton seulement si vous la reconnaissez.${tls}`
+        : `Réglages importés. « Annuler » revient aux réglages précédents.${tls}`
+      return true
+    } catch (e) {
+      fail(e)
+      return false
+    }
   })
 }
 

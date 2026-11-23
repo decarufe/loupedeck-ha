@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { save, state } from '../store'
+import { EXPORT_URL } from '../api'
+import { importSettings, save, state } from '../store'
 
 const url = ref(state.config?.ha.url ?? '')
 const allowSelfSigned = ref(state.config?.ha.allowSelfSigned ?? false)
@@ -41,6 +42,16 @@ async function saveConnection() {
   if (ok) newToken.value = ''
 }
 
+async function importFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  const text = await file.text()
+  // Vidé pour que le même fichier, corrigé, puisse être choisi à nouveau.
+  input.value = ''
+  await importSettings(text)
+}
+
 function setBrightness(e: Event) {
   const value = Number((e.target as HTMLInputElement).value)
   if (value === brightness.value) return
@@ -77,6 +88,16 @@ function setBrightness(e: Event) {
       Luminosité de la console ({{ Math.round(brightness * 100) }} %)
       <input class="brightness" type="range" min="0" max="1" step="0.1" :value="brightness" @change="setBrightness" />
     </label>
+
+    <h3>Sauvegarde</h3>
+    <div class="backup">
+      <a class="export-settings button" :href="EXPORT_URL" download>Exporter les réglages</a>
+      <label class="import-settings button">
+        Importer des réglages…
+        <input class="import-file" type="file" accept=".json,application/json" @change="importFile" />
+      </label>
+    </div>
+    <p class="backup-note">Le fichier contient tout (pages, adresse Home Assistant, luminosité, port de l’éditeur) sauf le jeton et le port de la console, propre à ce PC. Un import remplace tous les réglages ; le jeton en place est gardé si l’adresse est la même.</p>
   </section>
 </template>
 
@@ -92,5 +113,14 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; color: var(--
 .token-required { color: #f3b1b1; }
 .token-saved { color: var(--ok); }
 .save-settings { align-self: flex-start; }
+h3 { font-size: 0.9rem; font-weight: 600; border-top: 1px solid var(--line); padding-top: 10px; }
+.backup { display: flex; flex-wrap: wrap; gap: 8px; }
+.backup .button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; color: var(--fg); font-size: 0.88rem; text-decoration: none; cursor: pointer; }
+.backup .button:hover { border-color: #46505c; }
+.backup .button:focus-visible, .backup .button:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Masqué mais atteignable au clavier : le libellé sert de bouton. */
+.import-settings { position: relative; }
+.import-file { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; overflow: hidden; }
+.backup-note { color: var(--muted); line-height: 1.45; }
 input[type='range'] { width: 100%; padding: 0; accent-color: var(--accent); }
 </style>

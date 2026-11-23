@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { DASHBOARD_LABELS, DASHBOARD_TYPES, isEmptyPage, type DashboardType } from '@shared/config/schema'
 import { clearPage, removePage, save, setPageType, state } from '../store'
 import DashboardEntities from './DashboardEntities.vue'
+import DraftInput from './DraftInput.vue'
 import MdiIcon from './MdiIcon.vue'
 import SlotEditor from './SlotEditor.vue'
 
@@ -23,22 +24,15 @@ const current = computed(() => dashboard.value?.type ?? null)
 /** Comme dans l'Atelier : une touche sélectionnée remplace les réglages de la page dans ce panneau. */
 const slotMode = computed(() => current.value === 'custom' && state.selectedSlot !== null)
 
-function rename(e: Event) {
-  const name = (e.target as HTMLInputElement).value
+function rename(name: string) {
   const i = index.value
-  if (name === dashboard.value?.name) return
-  void save((cfg) => { const b = cfg.buttons[i]; if (b) b.name = name })
+  return save((cfg) => { const b = cfg.buttons[i]; if (b) b.name = name })
 }
 
 function setColor(color: string) {
   const i = index.value
-  if (color.toLowerCase() === dashboard.value?.color.toLowerCase()) return
-  void save((cfg) => { const b = cfg.buttons[i]; if (b) b.color = color.toUpperCase() })
-}
-const recolor = (e: Event) => setColor((e.target as HTMLInputElement).value)
-
-function commitOnEnter(e: Event) {
-  (e.target as HTMLInputElement).blur()
+  if (color.toLowerCase() === dashboard.value?.color.toLowerCase()) return undefined
+  return save((cfg) => { const b = cfg.buttons[i]; if (b) b.color = color.toUpperCase() })
 }
 </script>
 
@@ -80,7 +74,7 @@ function commitOnEnter(e: Event) {
       <template v-if="dashboard">
         <label class="field">
           <span>Nom</span>
-          <input class="name-input" type="text" :value="dashboard.name" @blur="rename" @keydown.enter="commitOnEnter" />
+          <DraftInput :key="index" class="name-input" type="text" :model-value="dashboard.name" :commit="rename" />
         </label>
         <div class="field">
           <span>Couleur de la LED</span>
@@ -89,7 +83,7 @@ function commitOnEnter(e: Event) {
               v-for="c in LED_COLORS" :key="c" type="button" class="swatch led-swatch" :style="{ background: c }" :aria-label="`Couleur ${c}`"
               :aria-pressed="dashboard.color.toUpperCase() === c" @click="setColor(c)"
             />
-            <input class="color-input" type="color" title="Autre couleur" aria-label="Autre couleur" :value="dashboard.color.toLowerCase()" @change="recolor" />
+            <DraftInput :key="index" class="color-input" type="color" title="Autre couleur" aria-label="Autre couleur" :model-value="dashboard.color.toLowerCase()" :commit="setColor" />
           </div>
         </div>
         <DashboardEntities />
