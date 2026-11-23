@@ -7,7 +7,7 @@ import { canPlace, type EntityInfo, type SlotKind } from '@shared/shared/placeme
 import { changeKind, fitsSlot, newTile, placeOnTile, TILE_KIND_LABELS, type SlotType } from '@shared/shared/tiles'
 import type { InputEvent } from '@shared/device/input'
 import * as api from './api'
-import type { LiveMessage, PublicConfig, Status } from './api'
+import type { ConsoleHolder, ForceResult, LiveMessage, PublicConfig, Status } from './api'
 
 /** Emplacement d'une page Bouton custom : une touche (0-11) ou la zone latérale d'une molette. */
 export type SlotTarget = { kind: 'key'; index: number } | { kind: 'strip'; knob: KnobId }
@@ -405,6 +405,29 @@ export async function tryInput(e: InputEvent): Promise<void> {
     state.error = null
     setTimeout(() => { state.previewVersion++ }, 400)
   } catch (err) { fail(err) }
+}
+
+// ---------- console prise par un autre programme ----------
+
+export async function loadHolders(): Promise<ConsoleHolder[]> {
+  // Simple information : un échec n'est pas une erreur d'édition.
+  return api.getHolders().catch(() => [])
+}
+
+export async function forceConsole(includeAgent: boolean): Promise<ForceResult | null> {
+  try {
+    const r = await api.forceConsole(includeAgent)
+    state.error = null
+    if (r.connected) {
+      const n = r.killed.length
+      state.notice = `Console connectée.${n === 0 ? '' : ` ${n === 1 ? 'Programme fermé' : 'Programmes fermés'} : ${r.killed.join(', ')}.`}`
+    }
+    await loadStatus()
+    return r
+  } catch (e) {
+    fail(e)
+    return null
+  }
 }
 
 // ---------- entités : icône et valeur affichées dans la palette ----------

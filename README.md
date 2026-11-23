@@ -18,10 +18,14 @@ pnpm ne servent qu'à [contribuer](#contribuer).
 
 ### Libérer la console
 
-La console ne peut être ouverte que par un seul programme. **Fermez le logiciel Loupedeck / Logi Options+**
-et désactivez son lancement au démarrage de Windows (Gestionnaire des tâches → Applications de démarrage).
-Si la console est occupée, le journal l'indique (« Fermez le logiciel Loupedeck ») et l'application réessaie
-toute seule.
+La console ne peut être ouverte que par un seul programme. Si le logiciel Loupedeck ou Logi Plugin Service (Logi
+Options+) l'utilise, l'éditeur l'indique (« Console occupée ») et propose **Forcer la connexion** : ces logiciels
+sont fermés immédiatement, puis l'application prend la console. Si Logi Options+ relance aussitôt son service,
+**Fermer aussi Logi Options+** apparaît (vos réglages de souris et de clavier Logitech peuvent s'interrompre un
+instant). Rien n'est jamais fermé sans votre clic, ni quand la console n'est pas branchée.
+
+Pour ne pas avoir à recommencer, désactivez leur lancement au démarrage de Windows (Gestionnaire des tâches →
+Applications de démarrage). Sinon, l'application réessaie toute seule dès que la console est libérée.
 
 ### Jeton Home Assistant
 
@@ -74,6 +78,9 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
 - **Mode Essayer** (en haut) : toucher les touches et tourner les molettes de la Live virtuelle pilote la vraie
   maison, comme la console. En mode **Éditer**, cliquer règle et glisser place.
 - Raccourcis : **Ctrl+Z** annule, **Échap** désélectionne, **Suppr** retire la touche sélectionnée.
+- **Sauvegarde** (dans Réglages) : **Exporter les réglages** télécharge un fichier avec tous les réglages sauf le
+  jeton et le port de la console (`device.path`, propre au PC) ; **Importer des réglages…** les remplace tous. Le
+  jeton en place est gardé si l'adresse Home Assistant est la même, sinon il faut le saisir à nouveau.
 - **Annuler** revient à la configuration précédente. Chaque modification est enregistrée et appliquée à la
   console aussitôt ; l'aperçu suit la console en direct.
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import ButtonPanel from './components/ButtonPanel.vue'
+import ConsoleRelease from './components/ConsoleRelease.vue'
 import EntityPalette from './components/EntityPalette.vue'
 import LiveDevice from './components/LiveDevice.vue'
 import Messages from './components/Messages.vue'
@@ -20,7 +21,9 @@ const haChip = computed(() => {
 const deviceChip = computed(() => {
   const d = state.status?.device
   if (!d) return null
-  return d.status === 'connected' ? { text: 'Console connectée', cls: 'ok' } : { text: 'Console déconnectée', cls: 'bad' }
+  if (d.status === 'connected') return { text: 'Console connectée', cls: 'ok' }
+  if (d.problem === 'absent') return { text: 'Console non branchée', cls: 'bad' }
+  return { text: d.problem === 'busy' ? 'Console occupée' : 'Console déconnectée', cls: 'bad' }
 })
 
 function setMode(m: 'edit' | 'try') {
@@ -76,6 +79,7 @@ onBeforeUnmount(() => {
     </header>
     <p v-if="state.config?.loadWarning" class="banner warning" role="status">{{ state.config.loadWarning }}</p>
     <Messages v-if="!showSettings" />
+    <ConsoleRelease />
     <p v-if="state.mode === 'try'" class="banner try" role="status">
       Mode Essayer : les touches et les molettes de la Live virtuelle pilotent la vraie maison, comme la console.
     </p>
