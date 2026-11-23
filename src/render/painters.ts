@@ -1,6 +1,7 @@
 import { loadImage, type SKRSContext2D } from '@napi-rs/canvas'
 import { SCREEN, keyRect, stripZoneRect, type Rect } from '../device/regions.js'
 import { drawIcon } from './icons.js'
+import { precipAxis, tempAxis } from '../weather/scales.js'
 import type { Surface } from './surface.js'
 import { EMPTY_TILE, type CameraAge, type FullView, type GraphView, type GridView, type KnobHint, type TileView, type View, type WeatherOutlook, type WeatherView } from '../views.js'
 
@@ -329,10 +330,19 @@ const SNOW_COLOR = '#E8F4FF'
 const TEMP_COLOR = '#FFB300'
 const FEELS_COLOR = '#FF7043'
 const OUTLOOK_HOUR_MS = 3_600_000
-/** Échelle minimale des barres : une bruine reste petite, une grosse averse prend toute la hauteur. */
-const MIN_SCALE_MM = 2
+/** Bande du bas réservée à l'échelle de temps ; les barres partent de la ligne de base juste au-dessus. */
+const TIME_STRIP = 11
 /** Part de la hauteur du graphique que peut occuper une barre. */
 const MAX_BAR_SHARE = 0.6
+/** Le futur : fond légèrement grisé, couleurs mélangées au gris (part de la couleur d'origine : 55 %). */
+const FUTURE_BG = '#1B1D21'
+const FUTURE_GRAY = '#808080'
+const FUTURE_KEEP = 0.55
+/** Opacité d'une barre prévue : 30 % + 70 % × probabilité (60 % quand la probabilité est inconnue). */
+const FUTURE_MIN_ALPHA = 0.3
+const UNKNOWN_PROBABILITY = 0.6
+
+const futureColor = (c: string): string => mix(c, FUTURE_GRAY, FUTURE_KEEP)
 
 function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   if (o.message) {
@@ -341,19 +351,35 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   }
   if (o.points.length === 0) return
   const { x: rx, y: ry, width: rw, height: rh } = OUTLOOK_RECT
-  const bottom = ry + rh
+  const baseline = ry + rh - TIME_STRIP
   const top = ry + 6
   const x = (t: number) => rx + ((t - o.start) / (o.end - o.start)) * rw
   const base = o.stale ? 0.4 : 1
+  const nx = Math.round(x(o.now))
+  const temps = o.points.flatMap((p) => [p.temp, p.feels])
+  const axis = tempAxis(Math.min(...temps), Math.max(...temps))
+  const mmMax = precipAxis(Math.max(0, ...o.points.map((p) => p.mm)))
 
   ctx.save()
   ctx.beginPath()
   ctx.rect(rx, ry, rw, rh)
   ctx.clip()
 
-  // Lignes d'abord : les barres passent devant.
-  paintOutlookLines(ctx, o, x, top + 4, bottom - 20, base)
-  const tops = paintOutlookBars(ctx, o, x, bottom, (bottom - top) * MAX_BAR_SHARE, base)
+  // Le futur : fond légèrement grisé.
+  ctx.globalAlpha = base
+  ctx.fillStyle = FUTURE_BG
+  ctx.fillRect(nx, ry, rx + rw - nx, rh)
+
+  // Lignes d'abord (les barres passent devant) : couleurs pleines avant « maintenant », désaturées après.
+  for (const future of [false, true]) {
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(future ? nx : rx, ry, future ? rx + rw - nx : nx - rx, rh)
+    ctx.clip()
+    paintOutlookLines(ctx, o, x, top + 4, baseline - 20, axis, base, future)
+    ctx.restore()
+  }
+  const tops = paintOutlookBars(ctx, o, x, baseline, (baseline - top) * MAX_BAR_SHARE, mmMax, base)
 
   // Flocon au-dessus de la barre de neige la plus haute.
   const snow = tops.filter((b) => b.kind === 'snow').sort((a, b) => a.top - b.top)[0]
@@ -363,31 +389,30 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   }
 
   // Trait « maintenant », entre les touches 10 et 11.
-  const nx = Math.floor(x(o.now)) + 0.5
   ctx.globalAlpha = base * 0.6
   ctx.strokeStyle = '#FFFFFF'
   ctx.lineWidth = 1
   ctx.setLineDash([3, 3])
   ctx.beginPath()
-  ctx.moveTo(nx, ry + 2)
-  ctx.lineTo(nx, bottom - 2)
+  ctx.moveTo(Math.floor(x(o.now)) + 0.5, ry + 2)
+  ctx.lineTo(Math.floor(x(o.now)) + 0.5, ry + rh - 2)
   ctx.stroke()
   ctx.restore()
 }
 
-function paintOutlookLines(ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, yTop: number, yBottom: number, alpha: number): void {
+function paintOutlookLines(
+  ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, yTop: number, yBottom: number,
+  axis: { lo: number; hi: number }, alpha: number, future: boolean,
+): void {
   const pts = o.points
   if (pts.length < 2) return
-  const all = pts.flatMap((p) => [p.temp, p.feels])
-  const lo = Math.min(...all)
-  const hi = Math.max(...all)
-  const span = Math.max(hi - lo, 2)
-  const floor = (lo + hi) / 2 - span / 2
-  const y = (v: number) => yBottom - ((v - floor) / span) * (yBottom - yTop)
+  const y = (v: number) => yBottom - ((v - axis.lo) / (axis.hi - axis.lo)) * (yBottom - yTop)
   const px = (p: { t: number }) => x(p.t)
+  const feelsColor = future ? futureColor(FEELS_COLOR) : FEELS_COLOR
+  const tempColor = future ? futureColor(TEMP_COLOR) : TEMP_COLOR
 
   ctx.globalAlpha = alpha * 0.25
-  ctx.fillStyle = FEELS_COLOR
+  ctx.fillStyle = feelsColor
   ctx.beginPath()
   pts.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p), y(p.feels)) : ctx.lineTo(px(p), y(p.feels))))
   for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(px(pts[i]!), y(pts[i]!.temp))
@@ -396,7 +421,7 @@ function paintOutlookLines(ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number)
 
   ctx.globalAlpha = alpha
   ctx.lineWidth = 1.6
-  for (const [color, value] of [[FEELS_COLOR, (p: { feels: number }) => p.feels], [TEMP_COLOR, (p: { temp: number }) => p.temp]] as const) {
+  for (const [color, value] of [[feelsColor, (p: { feels: number }) => p.feels], [tempColor, (p: { temp: number }) => p.temp]] as const) {
     ctx.strokeStyle = color
     ctx.beginPath()
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p), y(value(p))) : ctx.lineTo(px(p), y(value(p)))))
@@ -404,41 +429,42 @@ function paintOutlookLines(ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number)
   }
 }
 
-/** Barres de précipitations ; renvoie le haut et le centre de chacune (pour le flocon). */
+/** Barres de précipitations (hauteur = mm sur l'axe `mmMax`) ; renvoie le haut et le centre de chacune (pour le flocon). */
 function paintOutlookBars(
-  ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, bottom: number, maxH: number, alpha: number,
+  ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, baseline: number, maxH: number, mmMax: number, alpha: number,
 ): { kind: string; top: number; cx: number }[] {
-  const scale = Math.max(MIN_SCALE_MM, ...o.points.map((p) => p.mm))
   const out: { kind: string; top: number; cx: number }[] = []
   for (const p of o.points) {
     if (p.kind === 'none') continue
     const future = p.t > o.now
     if (!future && p.mm <= 0) continue // heure écoulée : on ne dessine que ce qui est vraiment tombé
-    const share = future && p.prob !== null ? p.prob / 100 : p.mm / scale
-    const h = Math.max(2, Math.min(1, share) * maxH)
+    const h = Math.max(2, Math.min(1, p.mm / mmMax) * maxH)
     // La valeur datée T couvre l'heure précédente : la barre va de T − 1 h à T.
     const x1 = x(p.t - OUTLOOK_HOUR_MS) + 1
     const w = x(p.t) - 1 - x1
+    const confidence = p.prob === null ? UNKNOWN_PROBABILITY : p.prob / 100
+    const rain = future ? futureColor(RAIN_COLOR) : RAIN_COLOR
+    const snow = future ? futureColor(SNOW_COLOR) : SNOW_COLOR
     ctx.save()
-    ctx.globalAlpha = alpha * (future ? 0.45 : 1)
+    ctx.globalAlpha = alpha * (future ? FUTURE_MIN_ALPHA + (1 - FUTURE_MIN_ALPHA) * confidence : 1)
     ctx.beginPath()
-    ctx.rect(x1, bottom - h, w, h)
+    ctx.rect(x1, baseline - h, w, h)
     ctx.clip()
-    ctx.fillStyle = p.kind === 'snow' ? SNOW_COLOR : RAIN_COLOR
-    ctx.fillRect(x1, bottom - h, w, h)
+    ctx.fillStyle = p.kind === 'snow' ? snow : rain
+    ctx.fillRect(x1, baseline - h, w, h)
     if (p.kind === 'mix') {
       // Mélange : bandes diagonales de neige sur fond de pluie.
-      ctx.strokeStyle = SNOW_COLOR
+      ctx.strokeStyle = snow
       ctx.lineWidth = 4
       ctx.beginPath()
       for (let sx = x1 - h; sx < x1 + w; sx += 10) {
-        ctx.moveTo(sx, bottom)
-        ctx.lineTo(sx + h, bottom - h)
+        ctx.moveTo(sx, baseline)
+        ctx.lineTo(sx + h, baseline - h)
       }
       ctx.stroke()
     }
     ctx.restore()
-    out.push({ kind: p.kind, top: bottom - h, cx: x1 + w / 2 })
+    out.push({ kind: p.kind, top: baseline - h, cx: x1 + w / 2 })
   }
   return out
 }
