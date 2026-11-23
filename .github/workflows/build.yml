@@ -46,7 +46,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
       # Version 0.2.<numéro du run>, écrite dans le paquet et dans latest.yml.
+      # bash, pas PowerShell (shell par défaut sous Windows) : PowerShell coupe « -c.extraMetadata… »
+      # en « -c » et « .extraMetadata… », et electron-builder prend alors « -c » pour un fichier de config.
       - run: pnpm exec electron-builder --win --publish never -c.extraMetadata.version=0.2.${{ github.run_number }}
+        shell: bash
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: installer
