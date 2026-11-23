@@ -27,6 +27,8 @@ export function createCameraDashboard(
   let wakeUp: (() => void) | null = null
   let tickTimer: ReturnType<typeof setInterval> | null = null
   let busy: CameraAge['busy'] = null
+  /** Ouverture par une alerte : « Chargement… » jusqu'à la première image ou au premier échec. */
+  let loading = false
   const press = new PressTracker()
 
   const isStale = () => image !== null && Date.now() - lastFrameAt >= STALE_MS
@@ -74,11 +76,13 @@ export function createCameraDashboard(
         if (mine !== epoch) return
         image = frame
         lastFrameAt = Date.now()
+        loading = false
         if (busy === 'refresh') busy = null
         ok = true
         d.requestRender()
       } catch {
         if (mine !== epoch) return
+        if (loading) { loading = false; d.requestRender() }
         // On garde la dernière image ; un nouvel essai part après un intervalle complet.
         if (busy === 'refresh') { busy = null; d.requestRender() }
       }
@@ -94,7 +98,7 @@ export function createCameraDashboard(
       return {
         kind: 'full',
         image,
-        message: image ? null : 'Image non disponible',
+        message: image ? null : loading ? 'Chargement…' : 'Image non disponible',
         stale: isStale(),
         offline,
         fit,
@@ -111,8 +115,15 @@ export function createCameraDashboard(
       else press.release(TILE_KEY)
     },
 
+    prepareAlert() {
+      image = null
+      loading = true
+    },
+
     activate() {
+      const keepLoading = loading
       this.deactivate()
+      loading = keepLoading
       if (!cfg.entityId) return
       source ??= makeSource(cfg)
       const mine = ++epoch
@@ -131,6 +142,7 @@ export function createCameraDashboard(
       if (tickTimer) clearInterval(tickTimer)
       tickTimer = null
       press.clear()
+      loading = false
       if (busy === 'refresh') busy = null
     },
   }
