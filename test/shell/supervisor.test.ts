@@ -146,6 +146,30 @@ describe('createSupervisor', () => {
     await Promise.all([a, b])
   })
 
+  it('fork qui lève : erreur journalisée, nouvel essai après 5000 ms', () => {
+    const { sup, fork, log } = setup()
+    fork.mockImplementationOnce(() => { throw new Error('spawn EPERM') })
+    sup.start()
+    expect(log.error).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(RESTART_DELAY_MS - 1)
+    expect(fork).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(1)
+    expect(fork).toHaveBeenCalledTimes(2)
+  })
+
+  it('fork qui lève depuis la relance : nouvel essai, sauf après stop', async () => {
+    const { sup, fork, log, last } = setup()
+    sup.start()
+    fork.mockImplementationOnce(() => { throw new Error('spawn EPERM') })
+    last().exit(1)
+    vi.advanceTimersByTime(RESTART_DELAY_MS)
+    expect(fork).toHaveBeenCalledTimes(2)
+    expect(log.error).toHaveBeenCalledTimes(1)
+    await sup.stop()
+    vi.advanceTimersByTime(60_000)
+    expect(fork).toHaveBeenCalledTimes(2)
+  })
+
   it('stop sans démarrage se résout', async () => {
     const { sup, fork } = setup()
     await sup.stop()

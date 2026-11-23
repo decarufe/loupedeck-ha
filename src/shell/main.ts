@@ -16,10 +16,13 @@ import { initAutostart } from './autostart.js'
 import { editorUrlFromPort, readEditorPort } from './editor-url.js'
 import { removeLegacyInstall } from './legacy.js'
 import { buildMenuTemplate, type MenuState } from './menu.js'
+import { createQuitController } from './quit.js'
 import { createSupervisor, type ChildLike } from './supervisor.js'
 import { startUpdateChecks } from './updater.js'
 
 const APP_ID = 'com.decarufe.loupedeck-ha'
+/** schtasks bloqué (service du Planificateur indisponible) ne doit pas traîner indéfiniment. */
+const SCHTASKS_TIMEOUT_MS = 10_000
 const { autoUpdater } = updaterPkg
 
 const configDir = resolveConfigDir(process.env, os.homedir())
@@ -63,23 +66,15 @@ async function main(): Promise<void> {
     else if (choice === 'github') await shell.openExternal(REPO_URL)
   }
 
-  let quitting: Promise<void> | null = null
-  function quit(): Promise<void> {
-    quitting ??= (async () => {
-      log.info('Arrêt demandé')
-      await supervisor.stop()
-      app.exit(0)
-    })()
-    return quitting
-  }
-
-  async function installUpdate(): Promise<void> {
-    if (quitting) return
-    log.info('Installation de la mise à jour', { version: state.updateVersion })
-    quitting = supervisor.stop()
-    await quitting
-    autoUpdater.quitAndInstall(true, true)
-  }
+  const quitter = createQuitController({
+    stop: () => supervisor.stop(),
+    exit: (code) => app.exit(code),
+    quitAndInstall: () => {
+      log.info('Lancement de l’installateur', { version: state.updateVersion })
+      autoUpdater.quitAndInstall(true, true)
+    },
+    log,
+  })
 
   const tray = new Tray(path.join(app.getAppPath(), 'build', 'icon.ico'))
   tray.setToolTip('Loupedeck HA')
@@ -93,8 +88,8 @@ async function main(): Promise<void> {
         refreshMenu()
       },
       about: () => { void about() },
-      quit: () => { void quit() },
-      installUpdate: () => { void installUpdate() },
+      quit: () => { void quitter.quit() },
+      installUpdate: () => { void quitter.installUpdate() },
     })))
   }
   tray.on('click', () => { void openEditor() })
@@ -103,9 +98,10 @@ async function main(): Promise<void> {
   app.on('second-instance', () => { void openEditor() })
   app.on('window-all-closed', () => { /* l'application vit dans la zone de notification */ })
   app.on('before-quit', (e) => {
-    if (quitting) return
+    // Pendant un arrêt engagé (Quitter, installation de la mise à jour), laisser Electron quitter.
+    if (quitter.inProgress()) return
     e.preventDefault()
-    void quit()
+    void quitter.quit()
   })
 
   // Fenêtre jamais affichée : seul moyen de recevoir la fin de session Windows (session-end).
@@ -115,10 +111,13 @@ async function main(): Promise<void> {
     void supervisor.stop()
   })
 
+  supervisor.start()
+
   if (app.isPackaged) {
-    await removeLegacyInstall({
+    // En parallèle : le nettoyage ne retarde pas le démarrage de l'application.
+    void removeLegacyInstall({
       run: (cmd, args) => new Promise((resolve) => {
-        execFile(cmd, args, { windowsHide: true }, (err) => {
+        execFile(cmd, args, { windowsHide: true, timeout: SCHTASKS_TIMEOUT_MS }, (err) => {
           const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
           resolve({ code })
         })
@@ -128,7 +127,7 @@ async function main(): Promise<void> {
       desktopDir: app.getPath('desktop'),
       startMenuDir: path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
       log,
-    })
+    }).catch((err: unknown) => { log.warn('Nettoyage de l’ancienne installation impossible', { erreur: String(err) }) })
     await initAutostart({
       statePath: path.join(configDir, 'shell.json'),
       login: {
@@ -140,8 +139,6 @@ async function main(): Promise<void> {
     state.autostart = app.getLoginItemSettings().openAtLogin
     refreshMenu()
   }
-
-  supervisor.start()
 
   if (app.isPackaged) {
     autoUpdater.logger = null

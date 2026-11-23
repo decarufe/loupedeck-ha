@@ -49,9 +49,23 @@ export function createSupervisor(o: SupervisorOptions): Supervisor {
     for (const l of listeners) l(next)
   }
 
+  function scheduleRestart() {
+    if (stopping) return
+    restartTimer = setTimeout(spawn, restartDelayMs)
+  }
+
   function spawn() {
     restartTimer = null
-    const c = o.fork()
+    let c: ChildLike
+    try {
+      c = o.fork()
+    } catch (err) {
+      o.log.error('Lancement de l’application impossible : nouvel essai prévu', {
+        erreur: err instanceof Error ? err.message : String(err), delaiMs: restartDelayMs,
+      })
+      scheduleRestart()
+      return
+    }
     child = c
     o.log.info('Application lancée')
     c.on('message', (msg) => { if (child === c && isAppToShell(msg)) setUrl(msg.editorUrl) })
@@ -68,7 +82,7 @@ export function createSupervisor(o: SupervisorOptions): Supervisor {
         return
       }
       o.log.warn('Application arrêtée sur une erreur : relance prévue', { code, delaiMs: restartDelayMs })
-      restartTimer = setTimeout(spawn, restartDelayMs)
+      scheduleRestart()
     })
   }
 
