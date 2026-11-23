@@ -51,6 +51,18 @@ describe('startUpdateChecks', () => {
     expect(updater.checkForUpdates).toHaveBeenCalledTimes(2)
   })
 
+  it('téléchargement en arrière-plan rejeté : pas de rejet non traité (l’événement error le journalise)', async () => {
+    const { updater } = setup()
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    updater.checkForUpdates.mockImplementation(async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.2.11' }, downloadPromise: Promise.reject(new Error('coupure')) }))
+    await vi.advanceTimersByTimeAsync(UPDATE_INITIAL_DELAY_MS)
+    vi.useRealTimers()
+    await new Promise((r) => setTimeout(r, 20))
+    process.off('unhandledRejection', unhandled)
+    expect(unhandled).not.toHaveBeenCalled()
+  })
+
   it('événement error : log.warn, pas d’exception', () => {
     const { updater, log } = setup()
     updater.emit('error', new Error('GitHub indisponible'))
