@@ -123,7 +123,11 @@ Dans `%APPDATA%\loupedeck-ha\logs\` (menu de l'icône → **À propos…** → *
 Si vous lanciez l'application depuis le dépôt (`pnpm start`, tâche planifiée « Loupedeck HA » créée par
 l'ancien script d'installation du dépôt) :
 
-1. Arrêtez la version du dépôt (Ctrl+C, ou fin de la tâche « Loupedeck HA »).
+1. **Avant de lancer l'installateur**, arrêtez l'ancienne version : dans VS Code (arrêt du débogage, ou
+   Ctrl+C dans le terminal de `pnpm start`), ou, si elle tourne par la tâche planifiée, mettez fin à la
+   tâche « Loupedeck HA » (Planificateur de tâches) et vérifiez dans le Gestionnaire des tâches qu'aucun
+   processus Node.js de Loupedeck HA ne reste. Sinon, la version installée ne peut pas ouvrir la console ni
+   le port de l'éditeur.
 2. Installez la version publiée (voir [Installation](#installation)).
 
 Au premier lancement, la version installée supprime l'ancienne tâche planifiée « Loupedeck HA » et les

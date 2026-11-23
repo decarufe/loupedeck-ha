@@ -62,7 +62,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # Deux fusions rapprochées publient dans l'ordre, sans s'annuler.
+    # Une seule publication à la fois. GitHub peut annuler un publish en attente quand un plus récent
+    # arrive : sans conséquence, la version la plus récente est publiée.
     concurrency:
       group: release
       cancel-in-progress: false
@@ -71,9 +72,23 @@ jobs:
         with:
           name: installer
           path: installer
-      - run: >-
-          gh release create "v0.2.${{ github.run_number }}" installer/*
-          --repo "${{ github.repository }}" --target "${{ github.sha }}"
-          --title "v0.2.${{ github.run_number }}" --generate-notes
+      # Si une version plus élevée est déjà publiée (runs terminés dans le désordre), celle-ci ne devient
+      # pas « Latest » : electron-updater suit la Release marquée Latest.
+      - name: Publier la Release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          highest=$(gh release list --repo "$REPO" --limit 20 --json tagName \
+            --jq '[.[].tagName | select(test("^v[0-9]+[.][0-9]+[.][0-9]+$")) | split(".")[2] | tonumber] | max // 0')
+          latest_flag=()
+          if [ "$highest" -gt "$RUN" ]; then
+            echo "Version plus élevée déjà publiée (segment $highest > $RUN) : --latest=false"
+            latest_flag=(--latest=false)
+          fi
+          gh release create "v0.2.$RUN" installer/* --repo "$REPO" --target "$SHA" \
+            --title "v0.2.$RUN" --generate-notes "${latest_flag[@]}"
