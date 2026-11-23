@@ -2,7 +2,7 @@ packages:
   - 'editor'
 allowBuilds:
   '@serialport/bindings-cpp': true
-  electron: true
+  electron-winstaller: false
   esbuild: true
 overrides:
   canvas: link:./stubs/canvas

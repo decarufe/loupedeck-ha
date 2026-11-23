@@ -1,0 +1,30 @@
+appId: com.decarufe.loupedeck-ha
+productName: Loupedeck HA
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - editor/dist/**
+  - build/icon.ico
+  - package.json
+# Modules natifs (serialport, @napi-rs/canvas) et fichiers de l'éditeur lus tels quels.
+asar: false
+# serialport et @napi-rs/canvas sont N-API : pas de recompilation pour l'ABI d'Electron.
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: LoupedeckHA-Setup-${version}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+  shortcutName: Loupedeck HA
+publish:
+  provider: github
+  owner: decarufe
+  repo: loupedeck-ha
+  releaseType: release
