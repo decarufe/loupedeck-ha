@@ -1,4 +1,5 @@
 import type { EntityInfo } from '../shared/placement.js'
+import type { GeoPoint } from '../weather/openmeteo.js'
 
 export interface HaEntity { entity_id: string; state: string; attributes: Record<string, any> }
 export interface HaStatus { state: 'connecting' | 'online' | 'offline'; reason: 'auth' | 'network' | null }
@@ -24,6 +25,8 @@ export interface HaPort {
   getForecasts(entityId: string, type: ForecastType): Promise<Forecast[]>
   /** Historique numérique d'une entité entre deux instants (ms) ; les états non numériques sont ignorés. */
   getHistory(entityId: string, startMs: number, endMs: number): Promise<HistoryPoint[]>
+  /** Position de la maison dans Home Assistant ; `null` si elle n'a jamais été configurée (0/0 ou absente). */
+  homeLocation(): Promise<GeoPoint | null>
   listEntityInfo(): Promise<EntityInfo[]>
   fetchCameraImage(entityId: string, size: { width: number; height: number }, signal?: AbortSignal): Promise<Buffer>
   close(): void

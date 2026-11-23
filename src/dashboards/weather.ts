@@ -3,11 +3,17 @@ import type { InputEvent } from '../device/input.js'
 import type { Forecast, ForecastType, HaEntity } from '../ha/types.js'
 import { weatherIcon } from '../render/icons.js'
 import { CONDITION_LABELS, formatTemp, formatUpdated } from '../shared/format.js'
-import type { WeatherDay, WeatherView } from '../views.js'
+import type { WeatherDay, WeatherOutlook, WeatherView } from '../views.js'
+import { fetchOutlook as fetchFromOpenMeteo, type GeoPoint, type OutlookPoint } from '../weather/openmeteo.js'
 import type { Dashboard, DashboardDeps } from './types.js'
 
 export const WEATHER_REFRESH_MS = 1_800_000
-const MAX_DAYS = 8
+/** Graphique des précipitations : données rafraîchies toutes les 15 min, trait « maintenant » redessiné chaque minute. */
+export const OUTLOOK_REFRESH_MS = 900_000
+const OUTLOOK_TICK_MS = 60_000
+const HOUR_MS = 3_600_000
+/** Les touches 9 à 11 sont prises par le graphique : il reste 5 jours (touches 4 à 8). */
+const MAX_DAYS = 5
 const DAY_FORMAT = new Intl.DateTimeFormat('fr-CA', { weekday: 'short' })
 
 /** Bits de `supported_features` : 1 = daily, 2 = hourly, 4 = twice_daily. */
@@ -52,6 +58,16 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
   /** Dernière mise à jour des données affichées (prévisions reçues ou état de l'entité changé). */
   let updatedAt: number | null = null
   let refreshing = false
+  const fetchOutlook = d.fetchOutlook ?? ((loc: GeoPoint) => fetchFromOpenMeteo(loc))
+  let outlook: OutlookPoint[] = []
+  let outlookError = false
+  let locationUnknown = false
+  let outlookBusy = false
+  let outlookRetry = false
+  /** Position de la maison, demandée à Home Assistant, gardée tant que le tableau reste actif. */
+  let home: GeoPoint | null = null
+  let outlookTimer: ReturnType<typeof setInterval> | null = null
+  let tickTimer: ReturnType<typeof setInterval> | null = null
 
   /** Appui sur la zone haut droite : Home Assistant relit l'entité, puis les prévisions sont redemandées. */
   async function refresh(): Promise<void> {
@@ -60,7 +76,7 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
     d.requestRender()
     try {
       await d.actions.updateEntity(id).catch(() => undefined)
-      await fetchForecasts()
+      await Promise.all([fetchForecasts(), loadOutlook()])
     } finally {
       refreshing = false
       d.requestRender()
@@ -104,13 +120,56 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
     }
   }
 
+  /** Graphique des précipitations (Open-Meteo, à la position de la maison dans Home Assistant). Jamais bloquant, jamais en double. */
+  async function loadOutlook(): Promise<void> {
+    if (!active || !id) return
+    if (outlookBusy) { outlookRetry = true; return }
+    const mine = epoch
+    outlookBusy = true
+    try {
+      if (!home) {
+        const loc = await d.ha.homeLocation()
+        if (mine !== epoch) return
+        if (!loc) { locationUnknown = true; return }
+        home = loc
+      }
+      locationUnknown = false
+      const points = await fetchOutlook(home)
+      if (mine !== epoch) return
+      outlook = points
+      outlookError = false
+    } catch {
+      if (mine === epoch) outlookError = true
+    } finally {
+      if (mine === epoch) {
+        outlookBusy = false
+        d.requestRender()
+        if (outlookRetry) { outlookRetry = false; void loadOutlook() }
+      }
+    }
+  }
+
+  function outlookView(): WeatherOutlook | null {
+    if (!id) return null
+    const now = Date.now()
+    const hasPoints = outlook.length > 0
+    return {
+      points: outlook,
+      start: now - 8 * HOUR_MS,
+      now,
+      end: now + 4 * HOUR_MS,
+      stale: hasPoints && (outlookError || d.ha.status().state !== 'online'),
+      message: hasPoints ? null : locationUnknown ? 'Position inconnue' : outlookError ? 'Prévision indisponible' : null,
+    }
+  }
+
   return {
     view(): WeatherView {
       const offline = d.ha.status().state !== 'online'
       const e = weather()
       if (!id) return { kind: 'weather', current: null, days: [], message: 'Aucune entité météo configurée', offline }
       const updated = { text: refreshing ? 'Actualisation…' : updatedAt ? formatUpdated(new Date(updatedAt)) : '—', busy: refreshing }
-      if (!e || e.state === 'unavailable') return { kind: 'weather', current: null, days, message: 'Météo indisponible', offline, updated }
+      if (!e || e.state === 'unavailable') return { kind: 'weather', current: null, days, message: 'Météo indisponible', offline, updated, outlook: outlookView() }
       const apparent = e.attributes.apparent_temperature
       return {
         kind: 'weather',
@@ -124,6 +183,7 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
         message: forecastType(e) ? null : 'Pas de prévisions pour cette entité',
         offline,
         updated,
+        outlook: outlookView(),
       }
     },
 
@@ -146,9 +206,15 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
             void fetchForecasts()
           }
         }
+      }), d.ha.onStatus((s) => {
+        // Home Assistant revient : on retente le graphique s'il avait échoué (position ou service).
+        if (s.state === 'online' && (outlookError || locationUnknown)) void loadOutlook()
       })]
       timer = setInterval(() => { void fetchForecasts() }, WEATHER_REFRESH_MS)
+      outlookTimer = setInterval(() => { void loadOutlook() }, OUTLOOK_REFRESH_MS)
+      tickTimer = setInterval(() => d.requestRender(), OUTLOOK_TICK_MS)
       void fetchForecasts()
+      void loadOutlook()
     },
 
     deactivate() {
@@ -156,10 +222,15 @@ export function createWeatherDashboard(cfg: WeatherDashboard, d: DashboardDeps):
       epoch++
       inFlight = false
       refetch = false
+      outlookBusy = false
+      outlookRetry = false
+      home = null
       for (const u of unsubs) u()
       unsubs = []
-      if (timer) clearInterval(timer)
+      for (const t of [timer, outlookTimer, tickTimer]) if (t) clearInterval(t)
       timer = null
+      outlookTimer = null
+      tickTimer = null
     },
   }
 }

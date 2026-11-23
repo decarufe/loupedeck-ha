@@ -40,6 +40,8 @@ export class MockHaServer {
       { datetime: '2026-11-22T12:00:00+00:00', condition: 'rainy', temperature: 3 },
     ],
   }
+  /** Réponse de `get_config` : la maison de Home Assistant (0/0 = jamais configurée). */
+  homeConfig: { latitude: number; longitude: number } = { latitude: 45.50169, longitude: -73.56725 }
   entityRegistry: Record<string, unknown>[] = [
     { entity_id: 'light.salon', name: null, area_id: 'salon', device_id: 'dev1', icon: null },
     { entity_id: 'light.cuisine', name: null, area_id: null, device_id: 'dev2', icon: 'mdi:ceiling-light' },
@@ -175,6 +177,9 @@ export class MockHaServer {
           return
         }
         reply({ context: { id: 'ctx' } })
+        return
+      case 'get_config':
+        reply({ ...this.homeConfig, elevation: 40, unit_system: {}, location_name: 'Maison', time_zone: 'America/Toronto', components: [], version: this.haVersion })
         return
       case 'config/entity_registry/list':
         reply(this.entityRegistry)

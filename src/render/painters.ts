@@ -2,7 +2,7 @@ import { loadImage, type SKRSContext2D } from '@napi-rs/canvas'
 import { SCREEN, keyRect, stripZoneRect, type Rect } from '../device/regions.js'
 import { drawIcon } from './icons.js'
 import type { Surface } from './surface.js'
-import { EMPTY_TILE, type CameraAge, type FullView, type GraphView, type GridView, type KnobHint, type TileView, type View, type WeatherView } from '../views.js'
+import { EMPTY_TILE, type CameraAge, type FullView, type GraphView, type GridView, type KnobHint, type TileView, type View, type WeatherOutlook, type WeatherView } from '../views.js'
 
 export const COLORS = { off: '#202020', empty: '#000000', unavailable: '#3A3A3A', bar: '#FFFFFF' } as const
 
@@ -299,7 +299,8 @@ function paintWeather(s: Surface, v: WeatherView): void {
   if (v.message) {
     paintWrapped(ctx, keyRect(5), v.message, 12, LIGHT)
   } else {
-    for (let i = 0; i < 8; i++) {
+    // Les touches 9 à 11 sont réservées au graphique des précipitations : 5 jours (touches 4 à 8).
+    for (let i = 0; i < 5; i++) {
       const d = v.days[i]
       if (!d) continue
       const r = keyRect(4 + i)
@@ -311,10 +312,135 @@ function paintWeather(s: Surface, v: WeatherView): void {
     }
   }
 
+  if (v.outlook) paintOutlook(ctx, v.outlook)
+
   if (v.offline) {
     desaturate(s)
     offlineBadge(s)
   }
+}
+
+// ---------- graphique des précipitations (touches 9 à 11) ----------
+
+/** Rectangle des touches 9, 10 et 11 : une seule courbe de maintenant − 8 h à maintenant + 4 h. */
+const OUTLOOK_RECT: Rect = { x: 150, y: 180, width: 270, height: 90 }
+const RAIN_COLOR = '#2F80ED'
+const SNOW_COLOR = '#E8F4FF'
+const TEMP_COLOR = '#FFB300'
+const FEELS_COLOR = '#FF7043'
+const OUTLOOK_HOUR_MS = 3_600_000
+/** Échelle minimale des barres : une bruine reste petite, une grosse averse prend toute la hauteur. */
+const MIN_SCALE_MM = 2
+/** Part de la hauteur du graphique que peut occuper une barre. */
+const MAX_BAR_SHARE = 0.6
+
+function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
+  if (o.message) {
+    paintWrapped(ctx, keyRect(10), o.message, 12, LIGHT)
+    return
+  }
+  if (o.points.length === 0) return
+  const { x: rx, y: ry, width: rw, height: rh } = OUTLOOK_RECT
+  const bottom = ry + rh
+  const top = ry + 6
+  const x = (t: number) => rx + ((t - o.start) / (o.end - o.start)) * rw
+  const base = o.stale ? 0.4 : 1
+
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(rx, ry, rw, rh)
+  ctx.clip()
+
+  // Lignes d'abord : les barres passent devant.
+  paintOutlookLines(ctx, o, x, top + 4, bottom - 20, base)
+  const tops = paintOutlookBars(ctx, o, x, bottom, (bottom - top) * MAX_BAR_SHARE, base)
+
+  // Flocon au-dessus de la barre de neige la plus haute.
+  const snow = tops.filter((b) => b.kind === 'snow').sort((a, b) => a.top - b.top)[0]
+  if (snow && snow.top - 14 >= ry + 2) {
+    ctx.globalAlpha = base
+    drawIcon(ctx, 'mdi:snowflake', snow.cx - 6, snow.top - 14, 12, SNOW_COLOR)
+  }
+
+  // Trait « maintenant », entre les touches 10 et 11.
+  const nx = Math.floor(x(o.now)) + 0.5
+  ctx.globalAlpha = base * 0.6
+  ctx.strokeStyle = '#FFFFFF'
+  ctx.lineWidth = 1
+  ctx.setLineDash([3, 3])
+  ctx.beginPath()
+  ctx.moveTo(nx, ry + 2)
+  ctx.lineTo(nx, bottom - 2)
+  ctx.stroke()
+  ctx.restore()
+}
+
+function paintOutlookLines(ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, yTop: number, yBottom: number, alpha: number): void {
+  const pts = o.points
+  if (pts.length < 2) return
+  const all = pts.flatMap((p) => [p.temp, p.feels])
+  const lo = Math.min(...all)
+  const hi = Math.max(...all)
+  const span = Math.max(hi - lo, 2)
+  const floor = (lo + hi) / 2 - span / 2
+  const y = (v: number) => yBottom - ((v - floor) / span) * (yBottom - yTop)
+  const px = (p: { t: number }) => x(p.t)
+
+  ctx.globalAlpha = alpha * 0.25
+  ctx.fillStyle = FEELS_COLOR
+  ctx.beginPath()
+  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p), y(p.feels)) : ctx.lineTo(px(p), y(p.feels))))
+  for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(px(pts[i]!), y(pts[i]!.temp))
+  ctx.closePath()
+  ctx.fill()
+
+  ctx.globalAlpha = alpha
+  ctx.lineWidth = 1.6
+  for (const [color, value] of [[FEELS_COLOR, (p: { feels: number }) => p.feels], [TEMP_COLOR, (p: { temp: number }) => p.temp]] as const) {
+    ctx.strokeStyle = color
+    ctx.beginPath()
+    pts.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p), y(value(p))) : ctx.lineTo(px(p), y(value(p)))))
+    ctx.stroke()
+  }
+}
+
+/** Barres de précipitations ; renvoie le haut et le centre de chacune (pour le flocon). */
+function paintOutlookBars(
+  ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, bottom: number, maxH: number, alpha: number,
+): { kind: string; top: number; cx: number }[] {
+  const scale = Math.max(MIN_SCALE_MM, ...o.points.map((p) => p.mm))
+  const out: { kind: string; top: number; cx: number }[] = []
+  for (const p of o.points) {
+    if (p.kind === 'none') continue
+    const future = p.t > o.now
+    if (!future && p.mm <= 0) continue // heure écoulée : on ne dessine que ce qui est vraiment tombé
+    const share = future && p.prob !== null ? p.prob / 100 : p.mm / scale
+    const h = Math.max(2, Math.min(1, share) * maxH)
+    // La valeur datée T couvre l'heure précédente : la barre va de T − 1 h à T.
+    const x1 = x(p.t - OUTLOOK_HOUR_MS) + 1
+    const w = x(p.t) - 1 - x1
+    ctx.save()
+    ctx.globalAlpha = alpha * (future ? 0.45 : 1)
+    ctx.beginPath()
+    ctx.rect(x1, bottom - h, w, h)
+    ctx.clip()
+    ctx.fillStyle = p.kind === 'snow' ? SNOW_COLOR : RAIN_COLOR
+    ctx.fillRect(x1, bottom - h, w, h)
+    if (p.kind === 'mix') {
+      // Mélange : bandes diagonales de neige sur fond de pluie.
+      ctx.strokeStyle = SNOW_COLOR
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      for (let sx = x1 - h; sx < x1 + w; sx += 10) {
+        ctx.moveTo(sx, bottom)
+        ctx.lineTo(sx + h, bottom - h)
+      }
+      ctx.stroke()
+    }
+    ctx.restore()
+    out.push({ kind: p.kind, top: bottom - h, cx: x1 + w / 2 })
+  }
+  return out
 }
 
 /** Zone haut droite de la météo : date et heure de la dernière mise à jour, et le bouton Actualiser. */

@@ -5,6 +5,7 @@ import {
   ERR_CANNOT_CONNECT,
   ERR_HASS_HOST_REQUIRED,
   ERR_INVALID_AUTH,
+  getConfig,
   isConnectionLost,
   subscribeEntities,
   type Connection,
@@ -16,6 +17,7 @@ import { Agent, fetch } from 'undici'
 import WebSocket from 'ws'
 import type { Logger } from '../log.js'
 import { isDimmable, type EntityInfo } from '../shared/placement.js'
+import type { GeoPoint } from '../weather/openmeteo.js'
 import { CameraImageError, OFFLINE_MESSAGE, type Forecast, type ForecastType, type HaEntity, type HaPort, type HaStatus, type HistoryPoint } from './types.js'
 
 /** Délai maximal de la phase d'ouverture + authentification d'une socket. */
@@ -307,6 +309,20 @@ export class HaClient implements HaPort {
       throw toError(err, this.scrub)
     }
     return parseHistory(res?.[entityId])
+  }
+
+  async homeLocation(): Promise<GeoPoint | null> {
+    const conn = this.requireConn()
+    let cfg: { latitude?: unknown; longitude?: unknown }
+    try {
+      cfg = await getConfig(conn)
+    } catch (err) {
+      throw toError(err, this.scrub)
+    }
+    const { latitude, longitude } = cfg
+    if (typeof latitude !== 'number' || typeof longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+    if (latitude === 0 && longitude === 0) return null
+    return { latitude, longitude }
   }
 
   async listEntityInfo(): Promise<EntityInfo[]> {

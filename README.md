@@ -72,6 +72,10 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
 - **Graphique plein écran** : capteur numérique et fenêtre par défaut. Sur la console, les molettes du haut
   règlent l'échelle et celles du milieu font défiler (à gauche verticalement, à droite horizontalement).
 - **Météo** : la zone haut droite de la console affiche la dernière mise à jour ; un appui l'actualise.
+  Les trois dernières touches forment un graphique de −8 h à +4 h : barres de pluie (bleu) et de neige
+  (blanc, mélange rayé), température et ressenti (humidex ou refroidissement éolien canadiens). Les données
+  viennent d'Open-Meteo, à la position de la maison dans Home Assistant (arrondie à environ 1 km), et sont
+  rafraîchies toutes les 15 min.
 - **Caméras** : entité, **Intervalle (ms)** (250 à 2000, par pas de 250) et **Cadrage** : « Plein écran »
   (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires). Sur la
   console, la tuile haut gauche compte le temps depuis la dernière image (vert, ambre après 10 s, rouge

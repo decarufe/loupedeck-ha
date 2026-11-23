@@ -1,3 +1,5 @@
+import type { OutlookPoint } from './weather/openmeteo.js'
+
 export type TileState = 'on' | 'off' | 'unavailable' | 'missing' | 'empty'
 
 export interface TileView {
@@ -26,6 +28,16 @@ export const EMPTY_TILE: TileView = { label: '', icon: null, state: 'empty', val
 
 export interface GridView { kind: 'grid'; keys: TileView[]; left: TileView[]; right: TileView[]; offline: boolean }
 export interface WeatherDay { label: string; icon: string; high: string; low: string }
+/** Graphique des touches 9 à 11 : `start` = maintenant − 8 h, `end` = maintenant + 4 h (ms). Sans `points`, `message` dit pourquoi. */
+export interface WeatherOutlook {
+  points: OutlookPoint[]
+  start: number
+  now: number
+  end: number
+  /** Données gardées mais plus à jour (service en erreur ou Home Assistant hors ligne) : dessinées en grisé. */
+  stale: boolean
+  message: string | null
+}
 export interface WeatherView {
   kind: 'weather'
   current: { icon: string; temperature: string; apparent: string | null; condition: string } | null
@@ -34,6 +46,7 @@ export interface WeatherView {
   offline: boolean
   /** Zone haut droite : date et heure de la dernière mise à jour ; un appui l'actualise. */
   updated?: { text: string; busy: boolean } | null
+  outlook?: WeatherOutlook | null
 }
 /** Tuile haut gauche d'une page caméra : temps écoulé depuis la dernière image affichée. */
 export interface CameraAge { text: string; level: 'ok' | 'warn' | 'bad'; busy: 'refresh' | 'reload' | null }
