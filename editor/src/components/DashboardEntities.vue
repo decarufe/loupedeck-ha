@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { GRAPH_WINDOWS_H, type CameraFit } from '@shared/config/schema'
 import { pageCommand, save, state } from '../store'
+import DraftInput from './DraftInput.vue'
 import EntityPicker from './EntityPicker.vue'
 
 const MAX_SENSORS = 4
@@ -28,21 +29,15 @@ function setEntity(entityId: string | null) {
   })
 }
 
-/** Ramène la saisie au pas de 250 ms, entre 250 et 2000 ms ; une saisie illisible remet la valeur courante. */
-function setIntervalMs(e: Event) {
-  const input = e.target as HTMLInputElement
-  const raw = Number(input.value)
+/** Ramène la saisie au pas de 250 ms, entre 250 et 2000 ms ; une saisie vide ou illisible est ignorée. */
+function setIntervalMs(value: string) {
+  const raw = Number(value)
   const cam = camera.value
-  if (!cam) return
-  if (!Number.isFinite(raw)) {
-    input.value = String(cam.intervalMs)
-    return
-  }
+  if (!cam || value.trim() === '' || !Number.isFinite(raw)) return undefined
   const snapped = Math.min(INTERVAL.max, Math.max(INTERVAL.min, Math.round(raw / INTERVAL.step) * INTERVAL.step))
-  input.value = String(snapped)
-  if (snapped === cam.intervalMs) return
+  if (snapped === cam.intervalMs) return undefined
   const i = index.value
-  void save((cfg) => {
+  return save((cfg) => {
     const b = cfg.buttons[i]
     if (b?.type === 'camera') b.intervalMs = snapped
   })
@@ -119,9 +114,9 @@ function removeSensor(n: number) {
     <template v-if="camera">
       <label class="field">
         Intervalle (ms)
-        <input
-          class="camera-interval" type="number" :min="INTERVAL.min" :max="INTERVAL.max" :step="INTERVAL.step"
-          :value="camera.intervalMs" @change="setIntervalMs"
+        <DraftInput
+          :key="index" class="camera-interval" type="number" :min="INTERVAL.min" :max="INTERVAL.max" :step="INTERVAL.step"
+          :model-value="String(camera.intervalMs)" :commit="setIntervalMs"
         />
       </label>
       <label class="field">

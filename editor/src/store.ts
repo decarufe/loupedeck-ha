@@ -184,14 +184,14 @@ export async function placeKind(target: SlotTarget, kind: TileKind): Promise<boo
   return ok
 }
 
-/** Modifie une touche : `patch` remplace des champs ; une chaîne vide supprime `label`, `icon` ou `color`. */
-export function updateTile(target: SlotTarget, patch: Record<string, unknown>): Promise<boolean> {
+/** Modifie une touche : `patch` remplace des champs (une fonction le calcule depuis la touche à jour, après les sauvegardes en file) ; une chaîne vide supprime `label`, `icon` ou `color`. */
+export function updateTile(target: SlotTarget, patch: Record<string, unknown> | ((tile: Tile) => Record<string, unknown>)): Promise<boolean> {
   const button = state.selectedButton
   return save((cfg) => {
     const access = slotAccess(cfg, button, target)
     const tile = access?.get()
     if (!access || !tile) return
-    const next = { ...tile, ...patch } as Record<string, unknown>
+    const next = { ...tile, ...(typeof patch === 'function' ? patch(tile) : patch) } as Record<string, unknown>
     for (const k of ['label', 'icon', 'color']) if (typeof next[k] === 'string' && (next[k] as string).trim() === '') delete next[k]
     access.set(next as unknown as Tile)
   })
