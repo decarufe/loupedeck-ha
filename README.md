@@ -195,7 +195,7 @@ pnpm run icon                  # régénère build\icon.ico
 1. Travaillez sur une branche et ouvrez une pull request vers `main` : le workflow `build` vérifie les types,
    lance les tests et compile.
 2. À la fusion sur `main`, le workflow publie une Release `v0.2.<n>` (installateur, `.blockmap` et
-   `latest.yml`). Les applications installées la récupèrent d'elles-mêmes.
+   `latest.yml`), où `<n>` suit la dernière version publiée. Les applications installées la récupèrent d'elles-mêmes.
 
 ## Licence
 
