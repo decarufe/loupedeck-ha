@@ -1,3 +1,4 @@
+import { AlertMonitor, type AlertPage } from './alerts.js'
 import type { AppConfig, DashboardConfig } from './config/schema.js'
 import type { StateStore } from './config/state.js'
 import { createDashboard } from './dashboards/factory.js'
@@ -11,13 +12,20 @@ import { paint } from './render/painters.js'
 import { createSurface } from './render/surface.js'
 import { EMPTY_TILE, type View } from './views.js'
 
-export type DevicePort = Pick<DeviceLink, 'present' | 'setLed' | 'onInput' | 'onStatus'>
+export type DevicePort = Pick<DeviceLink, 'present' | 'setLed' | 'onInput' | 'onStatus' | 'vibrate'>
 
 const BUTTON_COUNT = 8
 const OFF_COLOR = '#000000'
 const ALERT_COLOR = '#FF0000'
 const DIM_FACTOR = 0.15
 const BLINK_MS = 500
+/** Alerte de caméra : magenta, qu'aucune page n'utilise, et clignotement plus vif que le rouge de l'image figée. */
+const ALERT_LED = '#FF00FF'
+const ALERT_BLINK_MS = 250
+/** Un geste de moins de 5 s empêche l'ouverture automatique d'une page. */
+const GESTURE_GUARD_MS = 5000
+/** Une caméra ouverte par une alerte se referme après 5 minutes sans geste. */
+const AUTO_RETURN_MS = 300_000
 
 export function dim(hex: string, factor: number): string {
   const n = parseInt(hex.replace('#', ''), 16)
@@ -64,6 +72,16 @@ export class Navigator {
   private blinkTimer: ReturnType<typeof setInterval> | null = null
   private blinkRed = false
 
+  private readonly monitor: AlertMonitor
+  /** Dernière page ouverte par l'utilisateur (celle de `state.json`) : celle où revient l'écran après une alerte. */
+  private home = -1
+  /** La page active a été ouverte par une alerte. */
+  private autoOpened = false
+  private lastGesture = Number.NEGATIVE_INFINITY
+  private returnTimer: ReturnType<typeof setTimeout> | null = null
+  private alertTimer: ReturnType<typeof setInterval> | null = null
+  private alertOn = true
+
   constructor(d: NavigatorDeps) {
     this.device = d.device
     this.ha = d.ha
@@ -71,7 +89,13 @@ export class Navigator {
     this.state = d.state
     this.makeDashboard = d.makeDashboard ?? createDashboard
     this.log = d.log
+    this.monitor = new AlertMonitor({
+      onStart: (pages) => this.onAlertStart(pages),
+      onEnd: (page) => { if (this.autoOpened && page === this.active) this.returnHome() },
+      onChange: () => { this.syncAlertBlink(); this.applyLeds() },
+    })
     this.offs = [
+      this.ha.onEntities(e => this.monitor.update(e)),
       this.device.onInput(e => this.handle(e)),
       this.device.onStatus(s => {
         if (s === 'connected') {
@@ -85,6 +109,14 @@ export class Navigator {
   applyConfig(cfg: AppConfig): void {
     const previous = this.active
     this.stopBlink()
+    this.stopAlertBlink()
+    if (this.autoOpened) {
+      // Une alerte avait ouvert une caméra : la configuration change, on repart de la page de l'utilisateur.
+      this.dashboards[this.active]?.deactivate()
+      if (this.home >= 0) this.active = this.home
+      this.autoOpened = false
+    }
+    this.clearReturn()
     this.dashboards[this.active]?.deactivate()
     const before = this.active >= 0 ? JSON.stringify(this.cfgs[this.active] ?? null) : null
     this.cfgs = Array.from({ length: BUTTON_COUNT }, (_, i) => cfg.buttons[i] ?? null)
@@ -100,14 +132,20 @@ export class Navigator {
     this.active = this.cfgs[wanted] ? wanted : this.cfgs.findIndex(c => c !== null)
     this.dashboards[this.active]?.activate()
     if (this.active >= 0 && this.active !== stored) this.persist(this.active)
+    this.home = this.active
+    this.monitor.configure(this.cfgs.map((c): AlertPage | null => (c?.type === 'camera' && c.alert.enabled && c.alert.sensors.length > 0 ? { entityId: c.entityId, sensors: c.alert.sensors } : null)), this.ha.entities())
     this.applyLeds()
     this.requestRender()
     if (this.active !== previous) this.emitActive()
   }
 
   handle(e: InputEvent): void {
+    this.lastGesture = Date.now()
+    // Un geste pendant qu'une caméra en alerte est affichée : l'alerte est vue.
+    this.monitor.markSeen(this.active)
+    if (this.autoOpened) this.armReturn()
     if (e.type === 'button') {
-      this.switchTo(e.id)
+      this.userButton(e.id)
       return
     }
     this.dashboards[this.active]?.handle(e)
@@ -148,6 +186,9 @@ export class Navigator {
     for (const off of this.offs) off()
     this.offs.length = 0
     this.stopBlink()
+    this.stopAlertBlink()
+    this.clearReturn()
+    this.monitor.dispose()
     if (this.immediate) clearImmediate(this.immediate)
     this.immediate = null
     this.renderScheduled = false
@@ -156,16 +197,80 @@ export class Navigator {
     this.renderedCbs.clear()
   }
 
-  private switchTo(i: number): void {
-    if (i === this.active || !this.dashboards[i]) return
+  /** Affiche la page `i` sans rien enregistrer ; `alert` : ouverte par une alerte (image précédente effacée). */
+  private show(i: number, alert: boolean): void {
     this.stopBlink()
     this.dashboards[this.active]?.deactivate()
     this.active = i
+    if (alert) this.dashboards[i]!.prepareAlert?.()
     this.dashboards[i]!.activate()
-    this.persist(i)
     this.applyLeds()
     this.requestRender()
     this.emitActive()
+  }
+
+  private switchTo(i: number): void {
+    if (i === this.active || !this.dashboards[i]) return
+    this.show(i, false)
+    this.persist(i)
+  }
+
+  /** Bouton rond pressé par l'utilisateur : la page choisie devient sa page d'accueil. */
+  private userButton(id: number): void {
+    if (!this.dashboards[id]) return
+    if (id !== this.active) this.switchTo(id)
+    else if (!this.autoOpened) return
+    else this.persist(id)
+    this.home = id
+    this.autoOpened = false
+    this.clearReturn()
+    this.monitor.markSeen(id)
+  }
+
+  private onAlertStart(pages: number[]): void {
+    this.device.vibrate('alert')
+    this.syncAlertBlink()
+    if (pages.includes(this.active)) return
+    if (Date.now() - this.lastGesture < GESTURE_GUARD_MS) return
+    const target = pages[0]!
+    this.clearReturn()
+    this.autoOpened = true
+    this.show(target, true)
+  }
+
+  private returnHome(): void {
+    this.autoOpened = false
+    this.clearReturn()
+    if (this.home >= 0 && this.home !== this.active && this.dashboards[this.home]) this.show(this.home, false)
+  }
+
+  private armReturn(): void {
+    this.clearReturn()
+    this.returnTimer = setTimeout(() => { this.returnTimer = null; if (this.autoOpened) this.returnHome() }, AUTO_RETURN_MS)
+  }
+
+  private clearReturn(): void {
+    if (this.returnTimer) clearTimeout(this.returnTimer)
+    this.returnTimer = null
+  }
+
+  /** Le clignotement tourne tant qu'une page est en alerte non vue. */
+  private syncAlertBlink(): void {
+    const any = this.cfgs.some((_, i) => this.monitor.led(i) === 'alert')
+    if (!any) { this.stopAlertBlink(); return }
+    if (this.alertTimer) return
+    this.alertOn = true
+    this.alertTimer = setInterval(() => {
+      if (this.disposed) return
+      this.alertOn = !this.alertOn
+      for (let i = 0; i < BUTTON_COUNT; i++) if (this.monitor.led(i) === 'alert') this.device.setLed(i, this.ledColor(i))
+    }, ALERT_BLINK_MS)
+  }
+
+  private stopAlertBlink(): void {
+    if (this.alertTimer) clearInterval(this.alertTimer)
+    this.alertTimer = null
+    this.alertOn = true
   }
 
   private persist(i: number): void {
@@ -179,6 +284,9 @@ export class Navigator {
   private ledColor(i: number): string {
     const c = this.cfgs[i]
     if (!c) return OFF_COLOR
+    const alert = this.monitor.led(i)
+    if (alert === 'reminder') return ALERT_LED
+    if (alert === 'alert') return this.alertOn ? ALERT_LED : OFF_COLOR
     return i === this.active ? c.color : dim(c.color, DIM_FACTOR)
   }
 
@@ -217,6 +325,8 @@ export class Navigator {
     this.blinkRed = false
     this.blinkTimer = setInterval(() => {
       if (this.disposed) return
+      // L'alerte de caméra (et son rappel) prime sur le rouge de l'image figée.
+      if (this.monitor.led(this.active) !== 'none') return
       this.blinkRed = !this.blinkRed
       this.device.setLed(this.active, this.blinkRed ? ALERT_COLOR : this.ledColor(this.active))
     }, BLINK_MS)
