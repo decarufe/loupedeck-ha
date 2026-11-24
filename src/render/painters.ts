@@ -1,7 +1,7 @@
 import { loadImage, type SKRSContext2D } from '@napi-rs/canvas'
 import { SCREEN, keyRect, stripZoneRect, type Rect } from '../device/regions.js'
 import { drawIcon } from './icons.js'
-import { precipAxis, tempAxis } from '../weather/scales.js'
+import { formatCm, hourMarks, niceStep, precipAxis, tempAxis, tickValues } from '../weather/scales.js'
 import type { Surface } from './surface.js'
 import { EMPTY_TILE, type CameraAge, type FullView, type GraphView, type GridView, type KnobHint, type TileView, type View, type WeatherOutlook, type WeatherView } from '../views.js'
 
@@ -359,6 +359,10 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   const temps = o.points.flatMap((p) => [p.temp, p.feels])
   const axis = tempAxis(Math.min(...temps), Math.max(...temps))
   const mmMax = precipAxis(Math.max(0, ...o.points.map((p) => p.mm)))
+  const tempTop = top + 4
+  const tempBottom = baseline - 20
+  const tempY = (v: number) => tempBottom - ((v - axis.lo) / (axis.hi - axis.lo)) * (tempBottom - tempTop)
+  const maxBarH = (baseline - top) * MAX_BAR_SHARE
 
   ctx.save()
   ctx.beginPath()
@@ -376,10 +380,13 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
     ctx.beginPath()
     ctx.rect(future ? nx : rx, ry, future ? rx + rw - nx : nx - rx, rh)
     ctx.clip()
-    paintOutlookLines(ctx, o, x, top + 4, baseline - 20, axis, base, future)
+    paintOutlookLines(ctx, o, x, tempY, base, future)
     ctx.restore()
   }
-  const tops = paintOutlookBars(ctx, o, x, baseline, (baseline - top) * MAX_BAR_SHARE, mmMax, base)
+  const tops = paintOutlookBars(ctx, o, x, baseline, maxBarH, mmMax, base)
+
+  ctx.globalAlpha = base
+  paintOutlookScales(ctx, o, { x, axis, tempY, baseline, maxBarH, mmMax, hasSnow: tops.some((b) => b.kind === 'snow' || b.kind === 'mix') })
 
   // Flocon au-dessus de la barre de neige la plus haute.
   const snow = tops.filter((b) => b.kind === 'snow').sort((a, b) => a.top - b.top)[0]
@@ -401,12 +408,10 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
 }
 
 function paintOutlookLines(
-  ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, yTop: number, yBottom: number,
-  axis: { lo: number; hi: number }, alpha: number, future: boolean,
+  ctx: SKRSContext2D, o: WeatherOutlook, x: (t: number) => number, y: (v: number) => number, alpha: number, future: boolean,
 ): void {
   const pts = o.points
   if (pts.length < 2) return
-  const y = (v: number) => yBottom - ((v - axis.lo) / (axis.hi - axis.lo)) * (yBottom - yTop)
   const px = (p: { t: number }) => x(p.t)
   const feelsColor = future ? futureColor(FEELS_COLOR) : FEELS_COLOR
   const tempColor = future ? futureColor(TEMP_COLOR) : TEMP_COLOR
@@ -426,6 +431,60 @@ function paintOutlookLines(
     ctx.beginPath()
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(px(p), y(value(p))) : ctx.lineTo(px(p), y(value(p)))))
     ctx.stroke()
+  }
+}
+
+/** Texte d'échelle sur un fond sombre translucide (lisible par-dessus les courbes et les barres). */
+function scaleLabel(ctx: SKRSContext2D, text: string, x: number, y: number, align: 'left' | 'center' | 'right', color: string, boxUp = 6): void {
+  ctx.font = `bold 9px ${FONT}`
+  const w = Math.ceil(ctx.measureText(text).width)
+  const left = align === 'left' ? x : align === 'right' ? x - w : x - w / 2
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'
+  ctx.fillRect(left - 2, y - boxUp, w + 4, boxUp + 6)
+  ctx.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center'
+  ctx.fillStyle = color
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, x, y)
+}
+
+interface OutlookScaleGeometry {
+  x: (t: number) => number
+  axis: { lo: number; hi: number }
+  tempY: (v: number) => number
+  baseline: number
+  maxBarH: number
+  mmMax: number
+  hasSnow: boolean
+}
+
+/** Échelles superposées au tracé : température à gauche, précipitations à droite, heures locales en bas. */
+function paintOutlookScales(ctx: SKRSContext2D, o: WeatherOutlook, g: OutlookScaleGeometry): void {
+  const { x: rx, width: rw } = OUTLOOK_RECT
+  const right = rx + rw
+
+  // Température : un trait par degré, maximum et minimum de l'axe.
+  ctx.fillStyle = GRAY
+  for (const v of tickValues(g.axis.lo, g.axis.hi, niceStep(g.axis.hi - g.axis.lo, 15))) ctx.fillRect(rx, Math.round(g.tempY(v)), 3, 1)
+  scaleLabel(ctx, `${g.axis.hi}°`, rx + 5, g.tempY(g.axis.hi) + 6, 'left', LIGHT)
+  scaleLabel(ctx, `${g.axis.lo}°`, rx + 5, g.tempY(g.axis.lo) - 6, 'left', LIGHT)
+
+  // Précipitations : un trait par mm, maximum de l'axe, zéro, et l'équivalent en cm s'il y a de la neige.
+  const scaleTop = g.baseline - g.maxBarH
+  ctx.fillStyle = GRAY
+  for (const v of tickValues(0, g.mmMax, niceStep(g.mmMax, 10))) ctx.fillRect(right - 3, Math.min(g.baseline - 1, Math.round(g.baseline - (v / g.mmMax) * g.maxBarH)), 3, 1)
+  scaleLabel(ctx, `${g.mmMax} mm`, right - 5, scaleTop + 6, 'right', LIGHT)
+  scaleLabel(ctx, '0', right - 5, g.baseline - 6, 'right', LIGHT)
+  if (g.hasSnow) scaleLabel(ctx, formatCm(g.mmMax), right - 5, scaleTop + 17, 'right', SNOW_COLOR)
+
+  // Temps : un trait par heure pleine, l'heure locale toutes les 2 h quand elle tient dans le graphique.
+  ctx.font = `bold 9px ${FONT}`
+  for (const m of hourMarks(o.start, o.end)) {
+    const mx = Math.round(g.x(m.t))
+    ctx.fillStyle = GRAY
+    ctx.fillRect(mx, g.baseline, 1, 3)
+    if (!m.label) continue
+    const half = Math.ceil(ctx.measureText(m.label).width) / 2 + 2
+    if (mx - half >= rx && mx + half <= right) scaleLabel(ctx, m.label, mx, g.baseline + 7, 'center', LIGHT, 4)
   }
 }
 
