@@ -408,17 +408,17 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
       const t = NOW - 2 * HOUR
       const s = createSurface()
       await paint(s, view([opt(t, { mm: 3, kind: 'rain' })]))
-      expect(bright(s, 388, 212, 32, 16)).toBeGreaterThan(6) // « 3 mm » en haut à droite
+      expect(bright(s, 388, 200, 32, 16)).toBeGreaterThan(6) // « 3 mm » au-dessus du sommet de l'échelle, en haut à droite
     })
 
     it('echelle_precipitations_cm_seulement_avec_neige', async () => {
       const t = NOW - 2 * HOUR
       const rain = createSurface()
       await paint(rain, view([opt(t, { mm: 2, kind: 'rain' })]))
-      expect(bright(rain, 388, 229, 32, 10, 200)).toBe(0)
+      expect(bright(rain, 388, 188, 32, 14, 200)).toBe(0)
       const snow = createSurface()
       await paint(snow, view([opt(t, { mm: 2, kind: 'snow' })]))
-      expect(bright(snow, 388, 229, 32, 10, 200)).toBeGreaterThan(6) // « 1,4 cm » en blanc
+      expect(bright(snow, 388, 188, 32, 14, 200)).toBeGreaterThan(6) // « 1,4 cm » en blanc, au-dessus de « 2 mm »
     })
 
     it('echelle_de_temps_traits_et_etiquettes', async () => {
@@ -428,6 +428,25 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
       for (let x = 150; x < 420; x++) if (px(s, x, 260).join() === GRAY.join()) ticks++
       expect(ticks).toBeGreaterThanOrEqual(8) // un trait par heure pleine
       expect(bright(s, 150, 262, 270, 8, 120)).toBeGreaterThan(20) // heures locales
+    })
+
+    it('etiquettes_de_droite_ne_masquent_pas_les_barres_de_prevision', async () => {
+      const t = NOW + 4 * HOUR // dernière heure du graphique, sous les étiquettes de droite
+      const s = createSurface()
+      await paint(s, view([opt(t, { mm: 2, kind: 'rain', prob: 100 })]))
+      expect(px(s, centerX(t), BASE - 10)).toEqual([83, 128, 188]) // pluie désaturée, sans voile sombre
+      expect(px(s, centerX(t), BASE - 3)).toEqual([83, 128, 188])
+    })
+
+    it('etiquettes_dheure_ne_chevauchent_pas_les_frontieres_de_touche', async () => {
+      // « maintenant » 3 min après 14 h locales : les heures paires tombent à x ≈ 329 et 239, soit sur les frontières 330 et 240.
+      const now = new Date(2026, 10, 20, 14, 3).getTime()
+      const s = createSurface()
+      await paint(s, view([opt(now - HOUR)], { start: now - 8 * HOUR, now, end: now + 4 * HOUR }))
+      expect(bright(s, 316, 262, 28, 8, 120)).toBe(0) // « 14 h » omis
+      expect(bright(s, 226, 262, 28, 8, 120)).toBe(0) // « 10 h » omis
+      expect(bright(s, 150, 262, 270, 8, 120)).toBeGreaterThan(20) // les autres heures restent
+      expect(px(s, 330, 266)).toEqual(FUTURE_BG) // le trait « maintenant » s'arrête à la ligne de base
     })
 
     it('echelles_attenuees_si_donnees_perimees', async () => {

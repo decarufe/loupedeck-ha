@@ -78,7 +78,7 @@ L'utilisateur a choisi **A**.
   - Sinon, la deuxième ligne égale la température (pas de zone visible).
   - Les formules et seuils exacts sont à vérifier par le constructeur contre la définition d'Environnement Canada.
 - **Type d'une barre (pluie / neige / mélange)** : il vient des quantités prévues ou mesurées. Le type de la plus grande quantité l'emporte ; si les deux dépassent 30 % du total, c'est un mélange. Pluie verglaçante ou bruine : traitées comme pluie, la température ≤ 0 °C les marque comme mélange. Si la probabilité est élevée mais la quantité nulle, le type vient du code météo, et par défaut c'est la pluie.
-- **Échelle des barres** : le maximum est au moins 2 mm/h (une bruine reste visible mais petite) et grandit si une valeur le dépasse. Pour le futur, la hauteur suit la probabilité (comme présenté à l'utilisateur) et le type vient des quantités.
+- **Échelle des barres** : le maximum est au moins 2 mm/h (une bruine reste visible mais petite) et grandit si une valeur le dépasse. Révision 1 : la hauteur est toujours en mm, passé et futur ; pour le futur, la probabilité règle seulement l'opacité (section 5).
 - **État vide** : sans position ou sans première réponse du service, les boutons 1 à 3 restent vides et le bouton 2 affiche un court message (« Position inconnue » ou « Prévision indisponible »). Les jours de prévision restent affichés.
 - Remplacement des jours 6 à 8 : conséquence directe de « les 3 derniers boutons », signalée à l'utilisateur.
 - Pas de nouveau réglage dans l'éditeur pour la première version.
