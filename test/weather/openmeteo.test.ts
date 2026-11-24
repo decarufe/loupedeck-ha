@@ -44,6 +44,20 @@ describe('client Open-Meteo', () => {
     expect(pts.every((p) => Number.isFinite(p.temp) && Number.isFinite(p.feels) && Number.isFinite(p.mm))).toBe(true)
   })
 
+  it('parse_ignore_les_valeurs_physiquement_impossibles', () => {
+    const cases: [string, number, number][] = [
+      ['temperature_2m', 2, 1e12], ['temperature_2m', 3, -150], ['dew_point_2m', 4, 90], ['wind_speed_10m', 5, 900],
+      ['wind_speed_10m', 6, -1], ['precipitation', 3, 5000], ['precipitation', 4, -2], ['snowfall', 5, 9999],
+    ]
+    for (const [col, i, bad] of cases) {
+      const broken = structuredClone(fixture) as typeof fixture & { hourly: Record<string, (number | null)[]> }
+      broken.hourly[col]![i] = bad
+      const pts = parseOutlook(broken)
+      expect(pts, `${col}[${i}]=${bad}`).toHaveLength(12)
+      expect(pts.some((p) => p.t === T0 + i * 3_600_000)).toBe(false)
+    }
+  })
+
   it('parse_rejette_une_reponse_sans_donnees_horaires', () => {
     expect(() => parseOutlook({})).toThrow(/Open-Meteo/)
   })

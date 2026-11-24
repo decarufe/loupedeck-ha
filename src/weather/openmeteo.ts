@@ -25,6 +25,10 @@ export function buildOutlookUrl(loc: GeoPoint): string {
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
+/** Bornes physiques : une valeur hors de ces plages est une réponse corrompue, le point est ignoré (jamais dessiné ni mis à l'échelle). */
+const LIMITS = { temp: [-100, 70], wind: [0, 500], precip: [0, 1000], snow: [0, 1000] } as const
+const within = (v: number | null, [lo, hi]: readonly [number, number]): boolean => v === null || (v >= lo && v <= hi)
+
 export function parseOutlook(json: unknown): OutlookPoint[] {
   const h = (json as { hourly?: Record<string, unknown> } | null)?.hourly
   const time = h?.time
@@ -40,8 +44,12 @@ export function parseOutlook(json: unknown): OutlookPoint[] {
     const dew = num(dews![i])
     const wind = num(winds![i])
     if (!Number.isFinite(t) || temp === null || dew === null || wind === null) return
-    const mm = num(precips![i]) ?? 0
-    const { rainMm, snowMm } = splitPrecip(mm, num(snows![i]) ?? 0)
+    const rawMm = num(precips![i])
+    const rawSnow = num(snows![i])
+    if (!within(temp, LIMITS.temp) || !within(dew, LIMITS.temp) || !within(wind, LIMITS.wind)) return
+    if (!within(rawMm, LIMITS.precip) || !within(rawSnow, LIMITS.snow)) return
+    const mm = rawMm ?? 0
+    const { rainMm, snowMm } = splitPrecip(mm, rawSnow ?? 0)
     const prob = num(probs![i])
     out.push({
       t,

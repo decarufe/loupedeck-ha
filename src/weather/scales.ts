@@ -1,12 +1,16 @@
 /** Calculs purs des échelles du graphique météo (températures, précipitations, temps). */
 
-const STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500]
+/** Garde-fou : jamais plus de graduations que cela, quelles que soient les valeurs reçues. */
+const MAX_TICK_VALUES = 200
 const MM_TO_CM_SNOW = 0.7
 const cmFormat = new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 1 })
 
-/** Plus petit pas « rond » (1, 2, 5, 10…) qui donne au plus `maxTicks` graduations sur `range`. */
+/** Plus petit pas « rond » (1, 2, 5 × 10^n) qui donne au plus `maxTicks` graduations sur `range`, pour n'importe quel écart. */
 export function niceStep(range: number, maxTicks: number): number {
-  return STEPS.find((s) => range / s <= maxTicks) ?? STEPS[STEPS.length - 1]!
+  const target = range / maxTicks
+  if (!Number.isFinite(target) || target <= 1) return 1
+  const base = 10 ** Math.floor(Math.log10(target))
+  return [1, 2, 5, 10].map((m) => m * base).find((step) => step >= target) ?? base * 10
 }
 
 /** Entiers qui encadrent les courbes ; l'écart est d'au moins 2 °C (une courbe plate reste lisible). */
@@ -23,10 +27,11 @@ export function precipAxis(maxMm: number): number {
   return Math.max(2, Math.ceil(maxMm))
 }
 
-/** Multiples de `step` dans `[lo, hi]`, du plus petit au plus grand. */
+/** Multiples de `step` dans `[lo, hi]`, du plus petit au plus grand (au plus 200). */
 export function tickValues(lo: number, hi: number, step: number): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !Number.isFinite(step) || step <= 0) return []
   const out: number[] = []
-  for (let k = Math.ceil(lo / step); k * step <= hi + 1e-9; k++) out.push(k * step + 0)
+  for (let k = Math.ceil(lo / step); k * step <= hi + 1e-9 && out.length < MAX_TICK_VALUES; k++) out.push(k * step + 0)
   return out
 }
 

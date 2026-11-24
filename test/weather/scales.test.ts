@@ -12,6 +12,20 @@ describe('échelles du graphique météo', () => {
     expect(niceStep(0, 10)).toBe(1)
   })
 
+  it('nice_step_respecte_toujours_le_nombre_maximal_de_graduations', () => {
+    for (const range of [7_500, 10_000, 1e6, 1e9, 1e12]) {
+      for (const maxTicks of [10, 15]) expect(range / niceStep(range, maxTicks)).toBeLessThanOrEqual(maxTicks)
+    }
+  })
+
+  it('tick_values_est_borne_meme_avec_des_valeurs_aberrantes', () => {
+    expect(tickValues(0, 1e12, 1).length).toBeLessThanOrEqual(200)
+    expect(tickValues(0, Infinity, 1)).toEqual([])
+    expect(tickValues(NaN, 5, 1)).toEqual([])
+    expect(tickValues(0, 5, 0)).toEqual([])
+    expect(tickValues(0, 5, -1)).toEqual([])
+  })
+
   it('temp_axis_encadre_les_courbes_avec_des_entiers', () => {
     expect(tempAxis(-2.4, 8.6)).toEqual({ lo: -3, hi: 9 })
     expect(tempAxis(5, 5)).toEqual({ lo: 4, hi: 6 })
