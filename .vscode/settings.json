@@ -1,0 +1,6 @@
+{
+  "editor.formatOnSave": false,
+  "[typescript][typescriptreact][javascript][json][jsonc][css][html][markdown]": {
+    "editor.formatOnSave": false
+  }
+}
