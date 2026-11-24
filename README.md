@@ -78,6 +78,7 @@ La configuration se fait dans **l'éditeur**, une page web locale servie par l'a
   rafraîchies toutes les 15 min.
   Des échelles indiquent le maximum et le minimum de température (un trait par degré), le maximum de
   précipitations en mm (et en cm de neige) et l'heure ; le futur a un fond grisé et des couleurs plus ternes.
+  Une grille marque chaque 5 °C ; l'échelle contient toujours 0 °C, indiqué par une ligne cyan en tirets.
 - **Caméras** : entité, **Intervalle (ms)** (250 à 2000, par pas de 250) et **Cadrage** : « Plein écran »
   (l'image remplit l'écran, bords rognés) ou « Image entière » (image complète, bandes noires). Sur la
   console, la tuile haut gauche compte le temps depuis la dernière image (vert, ambre après 10 s, rouge

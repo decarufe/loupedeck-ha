@@ -60,6 +60,11 @@ L'utilisateur a choisi **A**.
   - Température (bord gauche) : valeurs maximum et minimum (entiers qui encadrent les courbes) et un petit trait par degré (par 2 ° si l'écart dépasse 15 °, puis par 5 °, etc.).
   - Précipitations (bord droit) : maximum en mm (au moins 2), un trait par mm, « 0 » en bas ; s'il y a de la neige, une seconde ligne en blanc donne l'équivalent en cm (cm = mm × 0,7).
   - Temps (bas, bande de 11 px) : un trait par heure pleine et l'heure locale toutes les 2 h (« 14 h »).
+- **Grille et 0 °C** (révision 2, demande de l'utilisateur) :
+  - L'axe de température contient toujours 0 °C, même si toutes les valeurs sont au-dessus ou au-dessous.
+  - Une ligne horizontale discrète tous les 5 °C, derrière les courbes et les barres.
+  - La ligne de 0 °C est distincte (cyan `#00E5FF`, tirets bordés de noir) et passe devant les courbes et les barres ; étiquette « 0° » cyan, omise si elle toucherait celle du maximum ou du minimum.
+  - Les 8 px du bas, masqués par le cadre de l'appareil, ne contiennent que le fond : la ligne de base est à y = 251.
 
 **Source des données**
 - Service Open-Meteo : température, point de rosée, vent, précipitations (pluie et neige séparées), probabilité de précipitation, sur −8 h à +4 h.
@@ -78,7 +83,7 @@ L'utilisateur a choisi **A**.
   - Sinon, la deuxième ligne égale la température (pas de zone visible).
   - Les formules et seuils exacts sont à vérifier par le constructeur contre la définition d'Environnement Canada.
 - **Type d'une barre (pluie / neige / mélange)** : il vient des quantités prévues ou mesurées. Le type de la plus grande quantité l'emporte ; si les deux dépassent 30 % du total, c'est un mélange. Pluie verglaçante ou bruine : traitées comme pluie, la température ≤ 0 °C les marque comme mélange. Si la probabilité est élevée mais la quantité nulle, le type vient du code météo, et par défaut c'est la pluie.
-- **Échelle des barres** : le maximum est au moins 2 mm/h (une bruine reste visible mais petite) et grandit si une valeur le dépasse. Pour le futur, la hauteur suit la probabilité (comme présenté à l'utilisateur) et le type vient des quantités.
+- **Échelle des barres** : le maximum est au moins 2 mm/h (une bruine reste visible mais petite) et grandit si une valeur le dépasse. Révision 1 : la hauteur est toujours en mm, passé et futur ; pour le futur, la probabilité règle seulement l'opacité (section 5).
 - **État vide** : sans position ou sans première réponse du service, les boutons 1 à 3 restent vides et le bouton 2 affiche un court message (« Position inconnue » ou « Prévision indisponible »). Les jours de prévision restent affichés.
 - Remplacement des jours 6 à 8 : conséquence directe de « les 3 derniers boutons », signalée à l'utilisateur.
 - Pas de nouveau réglage dans l'éditeur pour la première version.

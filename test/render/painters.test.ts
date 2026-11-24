@@ -226,7 +226,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
   const barX = (t: number) => 150 + ((t - (NOW - 8 * HOUR)) / (12 * HOUR)) * 270
   /** Une valeur datée T couvre l'heure précédente : la barre va de T − 1 h à T. */
   const centerX = (t: number) => Math.round((barX(t - HOUR) + barX(t)) / 2)
-  const BASE = 259 // ligne de base des barres (11 px de bande de temps en bas)
+  const BASE = 251 // ligne de base des barres (11 px de bande de temps, puis 8 px masqués par le cadre)
   const BOTTOM = BASE - 3
   const FUTURE_BG = [0x1b, 0x1d, 0x21]
 
@@ -235,7 +235,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 2, kind: 'rain' })]))
     expect(px(s, centerX(t), BOTTOM)).toEqual(RAIN)
-    expect(px(s, centerX(t), BASE - 40)).toEqual(RAIN) // pleine hauteur ≈ 44 px
+    expect(px(s, centerX(t), BASE - 36)).toEqual(RAIN) // pleine hauteur = 39 px
   })
 
   it('barre_de_neige_blanc_glace', async () => {
@@ -249,7 +249,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const t = NOW - 4 * HOUR
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 2, kind: 'snow' })]))
-    const d = s.ctx.getImageData(centerX(t) - 8, 198, 16, 16).data // entre le haut de la barre (~215) et le haut du graphique
+    const d = s.ctx.getImageData(centerX(t) - 8, 197, 16, 13).data // juste au-dessus du sommet de la barre (212)
     let lit = 0
     for (let i = 0; i < d.length; i += 4) if (d[i]! > 200 && d[i + 1]! > 200 && d[i + 2]! > 200) lit++
     expect(lit).toBeGreaterThan(8)
@@ -271,7 +271,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 0.2, kind: 'rain' })]))
     expect(px(s, centerX(t), BASE - 1)).toEqual(RAIN)
-    expect(px(s, centerX(t), BASE - 3)).toEqual(RAIN) // 0,2 mm sur 2 mm = 10 % de ~44 px
+    expect(px(s, centerX(t), BASE - 3)).toEqual(RAIN) // 0,2 mm sur 2 mm = 10 % de 39 px
   })
 
   it('valeur_datee_maintenant_finit_au_trait_maintenant', async () => {
@@ -301,7 +301,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const s = createSurface()
     await paint(s, view([opt(a, { mm: 8, kind: 'rain' }), opt(b, { mm: 4, kind: 'rain' })]))
     expect(px(s, centerX(a), 225)).toEqual(RAIN) // 8 mm = pleine hauteur
-    expect(px(s, centerX(b), 225)).toEqual([0, 0, 0]) // 4 mm = moitié (sommet vers 237)
+    expect(px(s, centerX(b), 225)).toEqual([0, 0, 0]) // 4 mm = moitié (sommet vers 231)
   })
 
   it('trait_maintenant_entre_les_touches_10_et_11', async () => {
@@ -343,7 +343,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
   })
 
   it('ligne_du_futur_desaturee', async () => {
-    const pts = Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 5, feels: 5 }))
+    const pts = Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 4.9, feels: 4.9 }))
     const s = createSurface()
     await paint(s, view(pts))
     const amber = (x0: number, x1: number) => {
@@ -362,7 +362,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const s = createSurface()
     await paint(s, view([opt(sure, { mm: 2, kind: 'rain', prob: 100 }), opt(douteuse, { mm: 2, kind: 'rain', prob: 30 })]))
     expect(px(s, centerX(sure), BOTTOM)[2]).toBeGreaterThan(px(s, centerX(douteuse), BOTTOM)[2]!)
-    for (const t of [sure, douteuse]) expect(px(s, centerX(t), BASE - 40)).not.toEqual(FUTURE_BG) // même hauteur
+    for (const t of [sure, douteuse]) expect(px(s, centerX(t), BASE - 36)).not.toEqual(FUTURE_BG) // même hauteur
   })
 
   it('prevision_hauteur_en_mm', async () => {
@@ -370,10 +370,10 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const fut = NOW + HOUR
     const s = createSurface()
     await paint(s, view([opt(past, { mm: 1, kind: 'rain' }), opt(fut, { mm: 1, kind: 'rain', prob: 100 })]))
-    expect(px(s, centerX(past), BASE - 20)).toEqual(RAIN) // 1 mm sur 2 mm = ~22 px
-    expect(px(s, centerX(past), BASE - 26)).toEqual([0, 0, 0])
-    expect(px(s, centerX(fut), BASE - 20)).not.toEqual(FUTURE_BG)
-    expect(px(s, centerX(fut), BASE - 26)).toEqual(FUTURE_BG)
+    expect(px(s, centerX(past), BASE - 17)).toEqual(RAIN) // 1 mm sur 2 mm = ~19 px
+    expect(px(s, centerX(past), BASE - 25)).toEqual([0, 0, 0])
+    expect(px(s, centerX(fut), BASE - 17)).not.toEqual(FUTURE_BG)
+    expect(px(s, centerX(fut), BASE - 25)).toEqual(FUTURE_BG)
   })
 
   describe('échelles', () => {
@@ -385,7 +385,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
       return n
     }
     const GRAY = [138, 138, 138]
-    /** 12 heures de 9 °C à -3 °C : l'axe va de -3 à 9. */
+    /** 12 heures de 9 °C à -2 °C : l'axe va de -2 à 9. */
     const falling = (over: Partial<WeatherOutlook> = {}) =>
       view(Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 9 - i, feels: 9 - i })), over)
 
@@ -393,41 +393,143 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
       const s = createSurface()
       await paint(s, falling())
       expect(bright(s, 150, 186, 26, 16)).toBeGreaterThan(8) // maximum, en haut à gauche
-      expect(bright(s, 150, 226, 26, 14)).toBeGreaterThan(8) // minimum, en bas à gauche
+      expect(bright(s, 150, 219, 26, 13)).toBeGreaterThan(8) // minimum, en bas à gauche
     })
 
     it('echelle_temperature_un_trait_par_degre', async () => {
       const s = createSurface()
       await paint(s, falling())
       let ticks = 0
-      for (let y = 186; y < 241; y++) if (px(s, 151, y).join() === GRAY.join()) ticks++
-      expect(ticks).toBeGreaterThanOrEqual(10) // 13 graduations de -3 à 9
+      for (let y = 186; y < 235; y++) if (px(s, 151, y).join() === GRAY.join()) ticks++
+      expect(ticks).toBeGreaterThanOrEqual(10) // 12 graduations de -2 à 9
     })
 
     it('echelle_precipitations_maximum_en_mm', async () => {
       const t = NOW - 2 * HOUR
       const s = createSurface()
       await paint(s, view([opt(t, { mm: 3, kind: 'rain' })]))
-      expect(bright(s, 388, 212, 32, 16)).toBeGreaterThan(6) // « 3 mm » en haut à droite
+      expect(bright(s, 388, 200, 32, 16)).toBeGreaterThan(6) // « 3 mm » au-dessus du sommet de l'échelle, en haut à droite
     })
 
     it('echelle_precipitations_cm_seulement_avec_neige', async () => {
       const t = NOW - 2 * HOUR
       const rain = createSurface()
       await paint(rain, view([opt(t, { mm: 2, kind: 'rain' })]))
-      expect(bright(rain, 388, 229, 32, 10, 200)).toBe(0)
+      expect(bright(rain, 388, 188, 32, 11, 200)).toBe(0)
       const snow = createSurface()
       await paint(snow, view([opt(t, { mm: 2, kind: 'snow' })]))
-      expect(bright(snow, 388, 229, 32, 10, 200)).toBeGreaterThan(6) // « 1,4 cm » en blanc
+      expect(bright(snow, 388, 188, 32, 11, 200)).toBeGreaterThan(6) // « 1,4 cm » en blanc, au-dessus de « 2 mm »
     })
 
     it('echelle_de_temps_traits_et_etiquettes', async () => {
       const s = createSurface()
       await paint(s, view([opt(NOW - HOUR)]))
       let ticks = 0
-      for (let x = 150; x < 420; x++) if (px(s, x, 260).join() === GRAY.join()) ticks++
+      for (let x = 150; x < 420; x++) if (px(s, x, BASE + 1).join() === GRAY.join()) ticks++
       expect(ticks).toBeGreaterThanOrEqual(8) // un trait par heure pleine
-      expect(bright(s, 150, 262, 270, 8, 120)).toBeGreaterThan(20) // heures locales
+      expect(bright(s, 150, 254, 270, 8, 120)).toBeGreaterThan(20) // heures locales
+    })
+
+    it('rien_dans_les_8_px_du_bas_masques_par_le_cadre', async () => {
+      const s = createSurface()
+      await paint(s, falling())
+      expect(bright(s, 150, 262, 270, 8, 60)).toBe(0)
+    })
+
+    /** Nombre de pixels de la couleur de la ligne du 0 °C sur la rangée `y`. */
+    const zeroPixels = (s: Surface, y: number, x0 = 150, x1 = 420) => {
+      let n = 0
+      for (let x = x0; x < x1; x++) if (px(s, x, y).join() === '0,229,255') n++
+      return n
+    }
+    /** Même calcul que le graphique : la zone de température va de y = 190 à y = 231. */
+    const tempY = (v: number, lo: number, hi: number) => Math.round(231 - ((v - lo) / (hi - lo)) * 41)
+    const flat = (temp: number, over: Partial<OutlookPoint> = {}) =>
+      view(Array.from({ length: 13 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp, feels: temp, ...over })))
+
+    it('ligne_du_zero_distinctive_dun_bord_a_lautre', async () => {
+      const s = createSurface()
+      await paint(s, falling())
+      const y = tempY(0, -2, 9)
+      expect(zeroPixels(s, y, 150, 240)).toBeGreaterThan(30)
+      expect(zeroPixels(s, y, 240, 330)).toBeGreaterThan(30)
+      expect(zeroPixels(s, y, 330, 420)).toBeGreaterThan(30) // pleine couleur aussi dans le futur
+    })
+
+    it('ligne_du_zero_visible_meme_si_tout_est_au_dessus_ou_au_dessous', async () => {
+      const ete = createSurface()
+      await paint(ete, flat(22))
+      expect(zeroPixels(ete, 231)).toBeGreaterThan(100) // bas de l'échelle
+      const hiver = createSurface()
+      await paint(hiver, flat(-22))
+      expect(zeroPixels(hiver, 190)).toBeGreaterThan(100) // haut de l'échelle
+    })
+
+    it('ligne_du_zero_passe_devant_les_barres', async () => {
+      for (const kind of ['rain', 'snow', 'mix'] as const) {
+        const s = createSurface()
+        await paint(s, flat(22, { kind, mm: 2, prob: 100 }))
+        expect(zeroPixels(s, 231)).toBeGreaterThan(100)
+      }
+    })
+
+    it('ligne_du_zero_ne_masque_pas_une_courbe_a_zero', async () => {
+      const s = createSurface()
+      await paint(s, flat(0))
+      const d = s.ctx.getImageData(150, 209, 180, 4).data // axe de -1 à 1 : zéro à mi-hauteur
+      let amber = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i]! > 180 && d[i + 1]! > 120 && d[i + 2]! < 60) amber++
+      expect(amber).toBeGreaterThan(30)
+    })
+
+    it('grille_aux_5_degres', async () => {
+      const s = createSurface()
+      await paint(s, flat(12)) // axe de 0 à 12 : lignes à 5 et 10
+      const lit = (y: number, x: number) => px(s, x, y).reduce((a, b) => a + b, 0)
+      for (const v of [5, 10]) {
+        expect(lit(tempY(v, 0, 12), 260)).toBeGreaterThan(60) // visible mais discrète
+        expect(lit(tempY(v, 0, 12), 260)).toBeLessThan(260)
+      }
+      for (const v of [3, 7]) expect(lit(tempY(v, 0, 12), 260)).toBe(0)
+      expect(lit(tempY(5, 0, 12), 370)).toBeGreaterThan(0x1b + 0x1d + 0x21 + 30) // aussi sur le fond du futur
+    })
+
+    it('etiquette_zero_sauf_si_elle_toucherait_le_maximum_ou_le_minimum', async () => {
+      const cyan = (s: Surface) => {
+        const d = s.ctx.getImageData(155, 186, 20, 50).data
+        let rows = 0
+        for (let y = 0; y < 50; y++) {
+          let n = 0
+          for (let x = 0; x < 20; x++) { const i = (y * 20 + x) * 4; if (d[i]! < 90 && d[i + 1]! > 120 && d[i + 2]! > 130) n++ }
+          if (n > 0) rows++
+        }
+        return rows
+      }
+      const milieu = createSurface()
+      await paint(milieu, view(Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 6 - i, feels: 6 - i }))))
+      expect(cyan(milieu)).toBeGreaterThanOrEqual(5) // hauteur du texte « 0° »
+      const bas = createSurface()
+      await paint(bas, flat(22))
+      expect(cyan(bas)).toBeLessThanOrEqual(3) // seulement la ligne : le minimum indique déjà 0°
+    })
+
+    it('etiquettes_de_droite_ne_masquent_pas_les_barres_de_prevision', async () => {
+      const t = NOW + 4 * HOUR // dernière heure du graphique, sous les étiquettes de droite
+      const s = createSurface()
+      await paint(s, view([opt(t, { mm: 2, kind: 'rain', prob: 100 })]))
+      expect(px(s, centerX(t), BASE - 10)).toEqual([83, 128, 188]) // pluie désaturée, sans voile sombre
+      expect(px(s, centerX(t), BASE - 3)).toEqual([83, 128, 188])
+    })
+
+    it('etiquettes_dheure_ne_chevauchent_pas_les_frontieres_de_touche', async () => {
+      // « maintenant » 3 min après 14 h locales : les heures paires tombent à x ≈ 329 et 239, soit sur les frontières 330 et 240.
+      const now = new Date(2026, 10, 20, 14, 3).getTime()
+      const s = createSurface()
+      await paint(s, view([opt(now - HOUR)], { start: now - 8 * HOUR, now, end: now + 4 * HOUR }))
+      expect(bright(s, 316, 254, 28, 8, 120)).toBe(0) // « 14 h » omis
+      expect(bright(s, 226, 254, 28, 8, 120)).toBe(0) // « 10 h » omis
+      expect(bright(s, 150, 254, 270, 8, 120)).toBeGreaterThan(20) // les autres heures restent
+      expect(px(s, 330, 258)).toEqual(FUTURE_BG) // le trait « maintenant » s'arrête à la ligne de base
     })
 
     it('echelles_attenuees_si_donnees_perimees', async () => {
