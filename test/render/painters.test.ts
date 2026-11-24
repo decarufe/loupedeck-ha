@@ -226,14 +226,16 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
   const barX = (t: number) => 150 + ((t - (NOW - 8 * HOUR)) / (12 * HOUR)) * 270
   /** Une valeur datée T couvre l'heure précédente : la barre va de T − 1 h à T. */
   const centerX = (t: number) => Math.round((barX(t - HOUR) + barX(t)) / 2)
-  const BOTTOM = 267 // 3 px au-dessus du bas de l'écran
+  const BASE = 259 // ligne de base des barres (11 px de bande de temps en bas)
+  const BOTTOM = BASE - 3
+  const FUTURE_BG = [0x1b, 0x1d, 0x21]
 
   it('barre_de_pluie_passee_pleine_hauteur', async () => {
     const t = NOW - 2 * HOUR
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 2, kind: 'rain' })]))
     expect(px(s, centerX(t), BOTTOM)).toEqual(RAIN)
-    expect(px(s, centerX(t), 270 - 45)).toEqual(RAIN) // au moins ~50 % de la zone
+    expect(px(s, centerX(t), BASE - 40)).toEqual(RAIN) // pleine hauteur ≈ 44 px
   })
 
   it('barre_de_neige_blanc_glace', async () => {
@@ -247,7 +249,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const t = NOW - 4 * HOUR
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 2, kind: 'snow' })]))
-    const d = s.ctx.getImageData(centerX(t) - 8, 200, 16, 18).data // entre le haut de la barre (~220) et le haut du graphique
+    const d = s.ctx.getImageData(centerX(t) - 8, 198, 16, 16).data // entre le haut de la barre (~215) et le haut du graphique
     let lit = 0
     for (let i = 0; i < d.length; i += 4) if (d[i]! > 200 && d[i + 1]! > 200 && d[i + 2]! > 200) lit++
     expect(lit).toBeGreaterThan(8)
@@ -264,45 +266,33 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     expect(seen.has(SNOW.join(','))).toBe(true)
   })
 
-  it('barre_de_prevision_plus_basse_et_plus_pale', async () => {
-    const past = NOW - 2 * HOUR
-    const fut = NOW + HOUR
-    const s = createSurface()
-    await paint(s, view([opt(past, { mm: 5, kind: 'rain' }), opt(fut, { mm: 5, kind: 'rain', prob: 50 })]))
-    expect(px(s, centerX(past), 230)).toEqual(RAIN)
-    expect(px(s, centerX(fut), 230)).toEqual([0, 0, 0]) // 50 % de ~50 px = ~25 px : 230 est au-dessus
-    const [r] = px(s, centerX(fut), BOTTOM)
-    expect(r).toBeGreaterThan(0)
-    expect(r).toBeLessThan(RAIN[0]!)
-  })
-
   it('petite_pluie_reste_visible', async () => {
     const t = NOW - HOUR
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 0.2, kind: 'rain' })]))
-    expect(px(s, centerX(t), 268)).toEqual(RAIN)
-    expect(px(s, centerX(t), 266)).toEqual(RAIN) // au moins 2 px
+    expect(px(s, centerX(t), BASE - 1)).toEqual(RAIN)
+    expect(px(s, centerX(t), BASE - 3)).toEqual(RAIN) // 0,2 mm sur 2 mm = 10 % de ~44 px
   })
 
   it('valeur_datee_maintenant_finit_au_trait_maintenant', async () => {
     const s = createSurface()
     await paint(s, view([opt(NOW, { mm: 2, kind: 'rain' })]))
     expect(px(s, 320, BOTTOM)).toEqual(RAIN) // l'heure écoulée est à gauche du trait
-    expect(px(s, 340, BOTTOM)).toEqual([0, 0, 0]) // rien à droite
+    expect(px(s, 340, BOTTOM)).toEqual(FUTURE_BG) // rien à droite : seulement le fond du futur
   })
 
   it('valeur_datee_dans_une_heure_commence_au_trait_maintenant', async () => {
     const s = createSurface()
     await paint(s, view([opt(NOW + HOUR, { mm: 2, kind: 'rain', prob: 100 })]))
     expect(px(s, 320, BOTTOM)).toEqual([0, 0, 0]) // rien à gauche
-    expect(px(s, 340, BOTTOM)[2]).toBeGreaterThan(0) // la prévision commence à droite
+    expect(px(s, 340, BOTTOM)).not.toEqual(FUTURE_BG) // la prévision commence à droite
   })
 
   it('heure_passee_sans_precipitation_mesuree_na_pas_de_barre', async () => {
     const t = NOW - 2 * HOUR
     const s = createSurface()
     await paint(s, view([opt(t, { mm: 0, kind: 'rain', prob: 60 })]))
-    expect(px(s, centerX(t), 269)).toEqual([0, 0, 0]) // même pas la barre minimale de 2 px
+    expect(px(s, centerX(t), BASE - 1)).toEqual([0, 0, 0]) // même pas la barre minimale de 2 px
   })
 
   it('le_maximum_grandit_au_dela_de_2_mm', async () => {
@@ -310,8 +300,8 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const b = NOW - 2 * HOUR
     const s = createSurface()
     await paint(s, view([opt(a, { mm: 8, kind: 'rain' }), opt(b, { mm: 4, kind: 'rain' })]))
-    expect(px(s, centerX(a), 230)).toEqual(RAIN) // 8 mm = pleine hauteur
-    expect(px(s, centerX(b), 230)).toEqual([0, 0, 0]) // 4 mm = moitié
+    expect(px(s, centerX(a), 225)).toEqual(RAIN) // 8 mm = pleine hauteur
+    expect(px(s, centerX(b), 225)).toEqual([0, 0, 0]) // 4 mm = moitié (sommet vers 237)
   })
 
   it('trait_maintenant_entre_les_touches_10_et_11', async () => {
@@ -326,7 +316,7 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     const pts = Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 5 + i * 0.1, feels: -5 + i * 0.1 }))
     const s = createSurface()
     await paint(s, view(pts))
-    const d = s.ctx.getImageData(150, 186, 270, 70).data
+    const d = s.ctx.getImageData(150, 186, 270, 53).data
     let amber = 0
     let orange = 0
     for (let i = 0; i < d.length; i += 4) {
@@ -335,6 +325,119 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     }
     expect(amber).toBeGreaterThan(100) // ligne de température
     expect(orange).toBeGreaterThan(100) // ligne ressentie
+  })
+
+  it('fond_du_futur_grise', async () => {
+    const s = createSurface()
+    await paint(s, view([opt(NOW - HOUR)]))
+    expect(px(s, 380, 184)).toEqual(FUTURE_BG)
+    expect(px(s, 200, 184)).toEqual([0, 0, 0])
+  })
+
+  it('barre_de_prevision_desaturee', async () => {
+    const t = NOW + HOUR
+    const s = createSurface()
+    await paint(s, view([opt(t, { mm: 2, kind: 'rain', prob: 100 })]))
+    // Pluie mélangée à 55 % avec le gris #808080 : (47,128,237) → (83,128,188), nettement moins saturée.
+    expect(px(s, centerX(t), BOTTOM)).toEqual([83, 128, 188])
+  })
+
+  it('ligne_du_futur_desaturee', async () => {
+    const pts = Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 5, feels: 5 }))
+    const s = createSurface()
+    await paint(s, view(pts))
+    const amber = (x0: number, x1: number) => {
+      const d = s.ctx.getImageData(x0, 186, x1 - x0, 53).data
+      let n = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i]! > 240 && d[i + 1]! > 165 && d[i + 2]! < 20) n++
+      return n
+    }
+    expect(amber(150, 325)).toBeGreaterThan(50)
+    expect(amber(335, 395)).toBe(0)
+  })
+
+  it('opacite_de_la_prevision_suit_la_probabilite', async () => {
+    const sure = NOW + HOUR
+    const douteuse = NOW + 2 * HOUR
+    const s = createSurface()
+    await paint(s, view([opt(sure, { mm: 2, kind: 'rain', prob: 100 }), opt(douteuse, { mm: 2, kind: 'rain', prob: 30 })]))
+    expect(px(s, centerX(sure), BOTTOM)[2]).toBeGreaterThan(px(s, centerX(douteuse), BOTTOM)[2]!)
+    for (const t of [sure, douteuse]) expect(px(s, centerX(t), BASE - 40)).not.toEqual(FUTURE_BG) // même hauteur
+  })
+
+  it('prevision_hauteur_en_mm', async () => {
+    const past = NOW - HOUR
+    const fut = NOW + HOUR
+    const s = createSurface()
+    await paint(s, view([opt(past, { mm: 1, kind: 'rain' }), opt(fut, { mm: 1, kind: 'rain', prob: 100 })]))
+    expect(px(s, centerX(past), BASE - 20)).toEqual(RAIN) // 1 mm sur 2 mm = ~22 px
+    expect(px(s, centerX(past), BASE - 26)).toEqual([0, 0, 0])
+    expect(px(s, centerX(fut), BASE - 20)).not.toEqual(FUTURE_BG)
+    expect(px(s, centerX(fut), BASE - 26)).toEqual(FUTURE_BG)
+  })
+
+  describe('échelles', () => {
+    /** Nombre de pixels dont tous les canaux dépassent `min` (du texte clair sur fond sombre). */
+    const bright = (s: Surface, x: number, y: number, w: number, h: number, min = 180) => {
+      const d = s.ctx.getImageData(x, y, w, h).data
+      let n = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i]! > min && d[i + 1]! > min && d[i + 2]! > min) n++
+      return n
+    }
+    const GRAY = [138, 138, 138]
+    /** 12 heures de 9 °C à -3 °C : l'axe va de -3 à 9. */
+    const falling = (over: Partial<WeatherOutlook> = {}) =>
+      view(Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 9 - i, feels: 9 - i })), over)
+
+    it('echelle_temperature_etiquettes_max_et_min', async () => {
+      const s = createSurface()
+      await paint(s, falling())
+      expect(bright(s, 150, 186, 26, 16)).toBeGreaterThan(8) // maximum, en haut à gauche
+      expect(bright(s, 150, 226, 26, 14)).toBeGreaterThan(8) // minimum, en bas à gauche
+    })
+
+    it('echelle_temperature_un_trait_par_degre', async () => {
+      const s = createSurface()
+      await paint(s, falling())
+      let ticks = 0
+      for (let y = 186; y < 241; y++) if (px(s, 151, y).join() === GRAY.join()) ticks++
+      expect(ticks).toBeGreaterThanOrEqual(10) // 13 graduations de -3 à 9
+    })
+
+    it('echelle_precipitations_maximum_en_mm', async () => {
+      const t = NOW - 2 * HOUR
+      const s = createSurface()
+      await paint(s, view([opt(t, { mm: 3, kind: 'rain' })]))
+      expect(bright(s, 388, 212, 32, 16)).toBeGreaterThan(6) // « 3 mm » en haut à droite
+    })
+
+    it('echelle_precipitations_cm_seulement_avec_neige', async () => {
+      const t = NOW - 2 * HOUR
+      const rain = createSurface()
+      await paint(rain, view([opt(t, { mm: 2, kind: 'rain' })]))
+      expect(bright(rain, 388, 229, 32, 10, 200)).toBe(0)
+      const snow = createSurface()
+      await paint(snow, view([opt(t, { mm: 2, kind: 'snow' })]))
+      expect(bright(snow, 388, 229, 32, 10, 200)).toBeGreaterThan(6) // « 1,4 cm » en blanc
+    })
+
+    it('echelle_de_temps_traits_et_etiquettes', async () => {
+      const s = createSurface()
+      await paint(s, view([opt(NOW - HOUR)]))
+      let ticks = 0
+      for (let x = 150; x < 420; x++) if (px(s, x, 260).join() === GRAY.join()) ticks++
+      expect(ticks).toBeGreaterThanOrEqual(8) // un trait par heure pleine
+      expect(bright(s, 150, 262, 270, 8, 120)).toBeGreaterThan(20) // heures locales
+    })
+
+    it('echelles_attenuees_si_donnees_perimees', async () => {
+      const s = createSurface()
+      await paint(s, falling({ stale: true }))
+      const d = s.ctx.getImageData(150, 186, 26, 16).data
+      let max = 0
+      for (let i = 0; i < d.length; i += 4) max = Math.max(max, d[i]!, d[i + 1]!, d[i + 2]!)
+      expect(max).toBeLessThan(180)
+    })
   })
 
   it('message_dans_la_touche_10_seulement', async () => {
