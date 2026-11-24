@@ -39,14 +39,14 @@ tout de suite : il n'est affiché qu'une fois. Il se saisit dans l'éditeur (voi
 
 Clic gauche : ouvre l'éditeur. Clic droit :
 
-| Entrée | Effet |
-| --- | --- |
-| **Redémarrer pour installer la version x.y.z** | Présente seulement quand une mise à jour est prête (voir plus bas). |
-| **Ouvrir la configuration** | Ouvre l'éditeur dans votre navigateur (`http://127.0.0.1:8765/` par défaut). |
-| **Démarrer avec Windows** | Case à cocher : lance l'application à l'ouverture de votre session. Cochée au premier lancement. |
-| **Vérifier les mises à jour…** | Cherche tout de suite une nouvelle version et propose de l'installer sans attendre. |
-| **À propos…** | Version installée, vérification des mises à jour, lien vers ce dépôt, bouton pour ouvrir le dossier des journaux. |
-| **Quitter** | Arrête proprement l'application (la console s'éteint) et retire l'icône. |
+| Entrée                                         | Effet                                                                                                             |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Redémarrer pour installer la version x.y.z** | Présente seulement quand une mise à jour est prête (voir plus bas).                                               |
+| **Ouvrir la configuration**                    | Ouvre l'éditeur dans votre navigateur (`http://127.0.0.1:8765/` par défaut).                                      |
+| **Démarrer avec Windows**                      | Case à cocher : lance l'application à l'ouverture de votre session. Cochée au premier lancement.                  |
+| **Vérifier les mises à jour…**                 | Cherche tout de suite une nouvelle version et propose de l'installer sans attendre.                               |
+| **À propos…**                                  | Version installée, vérification des mises à jour, lien vers ce dépôt, bouton pour ouvrir le dossier des journaux. |
+| **Quitter**                                    | Arrête proprement l'application (la console s'éteint) et retire l'icône.                                          |
 
 Relancer « Loupedeck HA » depuis le menu Démarrer alors qu'elle tourne déjà ouvre simplement l'éditeur.
 

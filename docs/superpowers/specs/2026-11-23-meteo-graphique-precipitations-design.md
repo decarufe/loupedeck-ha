@@ -7,11 +7,11 @@ Date : 2026-11-23. Révise la page Météo décrite dans `2026-11-22-types-de-pa
 Sur la page Météo, l'utilisateur veut **voir d'un coup d'œil si la pluie (ou la neige) arrive**.
 Les trois derniers boutons de la page forment une seule courbe continue sur 12 h :
 
-| Bouton | Touche | Période |
-|---|---|---|
-| 1 | 9 | de −8 h à −4 h (historique) |
-| 2 | 10 | de −4 h à maintenant (historique) |
-| 3 | 11 | de maintenant à +4 h (prévision) |
+| Bouton | Touche | Période                           |
+| ------ | ------ | --------------------------------- |
+| 1      | 9      | de −8 h à −4 h (historique)       |
+| 2      | 10     | de −4 h à maintenant (historique) |
+| 3      | 11     | de maintenant à +4 h (prévision)  |
 
 Les touches 4 à 8 gardent les prévisions par jour (5 jours au lieu de 8 : les jours 6 à 8 disparaissent).
 Les touches 0 à 3 (conditions actuelles) et la zone « Mise à jour / Actualiser » ne changent pas.
@@ -26,15 +26,18 @@ Les touches 0 à 3 (conditions actuelles) et la zone « Mise à jour / Actualise
 ## 3. Objectifs, non-objectifs, anti-objectifs
 
 **Objectifs**
+
 - Savoir en moins de 2 s si des précipitations arrivent dans les 4 prochaines heures et de quel type (pluie, neige, mélange).
 - Voir les 8 dernières heures de précipitations et de température.
 
 **Non-objectifs**
+
 - Pas de réglage de la période (fixe : −8 h à +4 h) ni d'interaction tactile sur ces trois boutons.
 - Pas de repli sur Home Assistant pour les données du graphique (approche mixte écartée pour la première version).
 - Pas de graphique pour d'autres types de page.
 
 **Anti-objectifs (échec même si « ça marche »)**
+
 - Un graphique où la température domine et où l'on ne repère pas la pluie.
 - Pluie et neige impossibles à distinguer.
 - Envoyer la position exacte de la maison à un tiers.
@@ -50,6 +53,7 @@ L'utilisateur a choisi **A**.
 ## 5. Conception (décidée avec l'utilisateur)
 
 **Visuel** (proposition validée implicitement, non contredite)
+
 - Les **barres de précipitations** sont l'élément principal : elles partent du bas, plus larges et plus lisibles que la courbe.
 - Pluie : bleu. Neige : blanc glacé avec un petit flocon au-dessus de la barre la plus haute. Mélange : barre rayée bleu et blanc.
 - Toutes les barres ont une hauteur en **mm** (passé et futur). Futur : l'**opacité** suit la probabilité (plus pâle = moins sûr).
@@ -67,6 +71,7 @@ L'utilisateur a choisi **A**.
   - Les 8 px du bas, masqués par le cadre de l'appareil, ne contiennent que le fond : la ligne de base est à y = 251.
 
 **Source des données**
+
 - Service Open-Meteo : température, point de rosée, vent, précipitations (pluie et neige séparées), probabilité de précipitation, sur −8 h à +4 h.
 - Chaque valeur de précipitation (et la probabilité) datée `T` couvre l'**heure précédente** (`T − 1 h` → `T`) ; la température et le code météo sont instantanés. La barre d'une valeur datée `T` va donc de `T − 1 h` à `T`, et 6 horodatages futurs (`forecast_hours=6`) couvrent jusqu'à maintenant + 4 h.
 - Mise à jour toutes les 15 min.
