@@ -376,6 +376,70 @@ describe('météo : graphique des précipitations (touches 9 à 11)', () => {
     expect(px(s, centerX(fut), BASE - 26)).toEqual(FUTURE_BG)
   })
 
+  describe('échelles', () => {
+    /** Nombre de pixels dont tous les canaux dépassent `min` (du texte clair sur fond sombre). */
+    const bright = (s: Surface, x: number, y: number, w: number, h: number, min = 180) => {
+      const d = s.ctx.getImageData(x, y, w, h).data
+      let n = 0
+      for (let i = 0; i < d.length; i += 4) if (d[i]! > min && d[i + 1]! > min && d[i + 2]! > min) n++
+      return n
+    }
+    const GRAY = [138, 138, 138]
+    /** 12 heures de 9 °C à -3 °C : l'axe va de -3 à 9. */
+    const falling = (over: Partial<WeatherOutlook> = {}) =>
+      view(Array.from({ length: 12 }, (_, i) => opt(NOW - 8 * HOUR + i * HOUR, { temp: 9 - i, feels: 9 - i })), over)
+
+    it('echelle_temperature_etiquettes_max_et_min', async () => {
+      const s = createSurface()
+      await paint(s, falling())
+      expect(bright(s, 150, 186, 26, 16)).toBeGreaterThan(8) // maximum, en haut à gauche
+      expect(bright(s, 150, 226, 26, 14)).toBeGreaterThan(8) // minimum, en bas à gauche
+    })
+
+    it('echelle_temperature_un_trait_par_degre', async () => {
+      const s = createSurface()
+      await paint(s, falling())
+      let ticks = 0
+      for (let y = 186; y < 241; y++) if (px(s, 151, y).join() === GRAY.join()) ticks++
+      expect(ticks).toBeGreaterThanOrEqual(10) // 13 graduations de -3 à 9
+    })
+
+    it('echelle_precipitations_maximum_en_mm', async () => {
+      const t = NOW - 2 * HOUR
+      const s = createSurface()
+      await paint(s, view([opt(t, { mm: 3, kind: 'rain' })]))
+      expect(bright(s, 388, 212, 32, 16)).toBeGreaterThan(6) // « 3 mm » en haut à droite
+    })
+
+    it('echelle_precipitations_cm_seulement_avec_neige', async () => {
+      const t = NOW - 2 * HOUR
+      const rain = createSurface()
+      await paint(rain, view([opt(t, { mm: 2, kind: 'rain' })]))
+      expect(bright(rain, 388, 229, 32, 10, 200)).toBe(0)
+      const snow = createSurface()
+      await paint(snow, view([opt(t, { mm: 2, kind: 'snow' })]))
+      expect(bright(snow, 388, 229, 32, 10, 200)).toBeGreaterThan(6) // « 1,4 cm » en blanc
+    })
+
+    it('echelle_de_temps_traits_et_etiquettes', async () => {
+      const s = createSurface()
+      await paint(s, view([opt(NOW - HOUR)]))
+      let ticks = 0
+      for (let x = 150; x < 420; x++) if (px(s, x, 260).join() === GRAY.join()) ticks++
+      expect(ticks).toBeGreaterThanOrEqual(8) // un trait par heure pleine
+      expect(bright(s, 150, 262, 270, 8, 120)).toBeGreaterThan(20) // heures locales
+    })
+
+    it('echelles_attenuees_si_donnees_perimees', async () => {
+      const s = createSurface()
+      await paint(s, falling({ stale: true }))
+      const d = s.ctx.getImageData(150, 186, 26, 16).data
+      let max = 0
+      for (let i = 0; i < d.length; i += 4) max = Math.max(max, d[i]!, d[i + 1]!, d[i + 2]!)
+      expect(max).toBeLessThan(180)
+    })
+  })
+
   it('message_dans_la_touche_10_seulement', async () => {
     const s = createSurface()
     await paint(s, view([], { message: 'Position inconnue' }))
