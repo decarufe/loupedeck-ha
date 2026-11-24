@@ -28,17 +28,25 @@ describe('échelles du graphique météo', () => {
 
   it('temp_axis_encadre_les_courbes_avec_des_entiers', () => {
     expect(tempAxis(-2.4, 8.6)).toEqual({ lo: -3, hi: 9 })
-    expect(tempAxis(5, 5)).toEqual({ lo: 4, hi: 6 })
-    expect(tempAxis(5.2, 5.9)).toEqual({ lo: 4, hi: 6 })
-    expect(tempAxis(6, 6)).toEqual({ lo: 5, hi: 7 })
+  })
+
+  it('temp_axis_contient_toujours_zero', () => {
+    expect(tempAxis(5.2, 8.6)).toEqual({ lo: 0, hi: 9 }) // tout au-dessus de zéro
+    expect(tempAxis(-20.3, -12)).toEqual({ lo: -21, hi: 0 }) // tout au-dessous
+    expect(tempAxis(0, 0)).toEqual({ lo: -1, hi: 1 })
+    expect(tempAxis(1, 1)).toEqual({ lo: 0, hi: 2 })
+    expect(tempAxis(-1, -1)).toEqual({ lo: -2, hi: 0 })
+    expect(tempAxis(-0, 3)).toEqual({ lo: 0, hi: 3 }) // jamais « -0 »
   })
 
   it('temp_axis_contient_toujours_les_donnees_et_ecart_au_moins_2', () => {
-    for (const [lo, hi] of [[-2.4, 8.6], [5, 5], [5.2, 5.9], [6, 6], [5.9, 6], [-0.1, 0.1], [-40, 35.5]] as const) {
+    for (const [lo, hi] of [[-2.4, 8.6], [5, 5], [5.2, 5.9], [6, 6], [5.9, 6], [0.2, 0.8], [-0.8, -0.2], [0.9, 1], [-1, -0.9], [-0.1, 0.1], [-40, 35.5]] as const) {
       const a = tempAxis(lo, hi)
       expect(a.lo).toBeLessThanOrEqual(lo)
       expect(a.hi).toBeGreaterThanOrEqual(hi)
       expect(a.hi - a.lo).toBeGreaterThanOrEqual(2)
+      expect(a.lo).toBeLessThanOrEqual(0)
+      expect(a.hi).toBeGreaterThanOrEqual(0)
     }
   })
 

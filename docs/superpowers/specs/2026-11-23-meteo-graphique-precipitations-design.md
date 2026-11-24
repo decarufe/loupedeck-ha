@@ -60,6 +60,11 @@ L'utilisateur a choisi **A**.
   - Température (bord gauche) : valeurs maximum et minimum (entiers qui encadrent les courbes) et un petit trait par degré (par 2 ° si l'écart dépasse 15 °, puis par 5 °, etc.).
   - Précipitations (bord droit) : maximum en mm (au moins 2), un trait par mm, « 0 » en bas ; s'il y a de la neige, une seconde ligne en blanc donne l'équivalent en cm (cm = mm × 0,7).
   - Temps (bas, bande de 11 px) : un trait par heure pleine et l'heure locale toutes les 2 h (« 14 h »).
+- **Grille et 0 °C** (révision 2, demande de l'utilisateur) :
+  - L'axe de température contient toujours 0 °C, même si toutes les valeurs sont au-dessus ou au-dessous.
+  - Une ligne horizontale discrète tous les 5 °C, derrière les courbes et les barres.
+  - La ligne de 0 °C est distincte (cyan `#00E5FF`, tirets bordés de noir) et passe devant les courbes et les barres ; étiquette « 0° » cyan, omise si elle toucherait celle du maximum ou du minimum.
+  - Les 8 px du bas, masqués par le cadre de l'appareil, ne contiennent que le fond : la ligne de base est à y = 251.
 
 **Source des données**
 - Service Open-Meteo : température, point de rosée, vent, précipitations (pluie et neige séparées), probabilité de précipitation, sur −8 h à +4 h.

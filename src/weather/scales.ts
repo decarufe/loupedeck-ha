@@ -13,12 +13,12 @@ export function niceStep(range: number, maxTicks: number): number {
   return [1, 2, 5, 10].map((m) => m * base).find((step) => step >= target) ?? base * 10
 }
 
-/** Entiers qui encadrent les courbes ; l'écart est d'au moins 2 °C (une courbe plate reste lisible). */
+/** Entiers qui encadrent les courbes et toujours 0 °C ; l'écart est d'au moins 2 °C (une courbe plate reste lisible). */
 export function tempAxis(lo: number, hi: number): { lo: number; hi: number } {
-  const a = Math.floor(lo)
-  const b = Math.ceil(hi)
+  const a = Math.min(0, Math.floor(lo)) + 0 // + 0 : jamais « -0 »
+  const b = Math.max(0, Math.ceil(hi))
   if (b - a >= 2) return { lo: a, hi: b }
-  const start = Math.floor((lo + hi) / 2 - 1)
+  const start = Math.floor((lo + hi) / 2 - 1) // l'axe tient ici entre -1 et 1 : 0 reste compris dans [start, start + 2]
   return { lo: start, hi: start + 2 }
 }
 

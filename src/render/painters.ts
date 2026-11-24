@@ -330,8 +330,14 @@ const SNOW_COLOR = '#E8F4FF'
 const TEMP_COLOR = '#FFB300'
 const FEELS_COLOR = '#FF7043'
 const OUTLOOK_HOUR_MS = 3_600_000
-/** Bande du bas réservée à l'échelle de temps ; les barres partent de la ligne de base juste au-dessus. */
+/** Bas de l'écran masqué par le cadre de l'appareil : le fond s'y prolonge, mais rien d'utile n'y est dessiné. */
+const FRAME_MARGIN = 8
+/** Bande réservée à l'échelle de temps ; les barres partent de la ligne de base juste au-dessus. */
 const TIME_STRIP = 11
+/** Grille de température : une ligne discrète tous les 5 °C, et celle de 0 °C bien distincte. */
+const TEMP_GRID_STEP = 5
+const TEMP_GRID_ALPHA = 0.35
+const ZERO_COLOR = '#00E5FF'
 /** Largeur d'une touche : les frontières du graphique sont à x = 240 et 330. */
 const KEY_W = 90
 /** Part de la hauteur du graphique que peut occuper une barre. */
@@ -353,7 +359,7 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   }
   if (o.points.length === 0) return
   const { x: rx, y: ry, width: rw, height: rh } = OUTLOOK_RECT
-  const baseline = ry + rh - TIME_STRIP
+  const baseline = ry + rh - FRAME_MARGIN - TIME_STRIP
   const top = ry + 6
   const x = (t: number) => rx + ((t - o.start) / (o.end - o.start)) * rw
   const base = o.stale ? 0.4 : 1
@@ -376,6 +382,11 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   ctx.fillStyle = FUTURE_BG
   ctx.fillRect(nx, ry, rx + rw - nx, rh)
 
+  // Grille de température, derrière les courbes et les barres.
+  ctx.globalAlpha = base * TEMP_GRID_ALPHA
+  ctx.fillStyle = GRAY
+  for (const v of tickValues(axis.lo, axis.hi, TEMP_GRID_STEP)) if (v !== 0) ctx.fillRect(rx, Math.round(tempY(v)), rw, 1)
+
   // Lignes d'abord (les barres passent devant) : couleurs pleines avant « maintenant », désaturées après.
   for (const future of [false, true]) {
     ctx.save()
@@ -388,6 +399,7 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   const tops = paintOutlookBars(ctx, o, x, baseline, maxBarH, mmMax, base)
 
   ctx.globalAlpha = base
+  paintZeroLine(ctx, Math.round(tempY(0)))
   paintOutlookScales(ctx, o, { x, axis, tempY, baseline, maxBarH, mmMax, hasSnow: tops.some((b) => b.kind === 'snow' || b.kind === 'mix') })
 
   // Flocon au-dessus de la barre de neige la plus haute.
@@ -408,6 +420,17 @@ function paintOutlook(ctx: SKRSContext2D, o: WeatherOutlook): void {
   ctx.lineTo(nowX, baseline)
   ctx.stroke()
   ctx.restore()
+}
+
+/** Ligne de 0 °C, devant les courbes et les barres : tirets bordés de noir (lisibles sur toute couleur, la courbe se voit entre eux). */
+function paintZeroLine(ctx: SKRSContext2D, y: number): void {
+  const { x, width } = OUTLOOK_RECT
+  for (let dx = 0; dx < width; dx += 9) {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    ctx.fillRect(x + dx, y - 1, 6, 3)
+    ctx.fillStyle = ZERO_COLOR
+    ctx.fillRect(x + dx, y, 6, 1)
+  }
 }
 
 function paintOutlookLines(
@@ -465,11 +488,13 @@ function paintOutlookScales(ctx: SKRSContext2D, o: WeatherOutlook, g: OutlookSca
   const { x: rx, width: rw } = OUTLOOK_RECT
   const right = rx + rw
 
-  // Température : un trait par degré, maximum et minimum de l'axe.
+  // Température : un trait par degré, maximum et minimum de l'axe, et 0° s'il n'est pas trop près de l'un d'eux.
   ctx.fillStyle = GRAY
   for (const v of tickValues(g.axis.lo, g.axis.hi, niceStep(g.axis.hi - g.axis.lo, 15))) ctx.fillRect(rx, Math.round(g.tempY(v)), 3, 1)
   scaleLabel(ctx, `${g.axis.hi}°`, rx + 5, g.tempY(g.axis.hi) + 6, 'left', LIGHT)
   scaleLabel(ctx, `${g.axis.lo}°`, rx + 5, g.tempY(g.axis.lo) - 6, 'left', LIGHT)
+  const zeroY = g.tempY(0)
+  if (zeroY - (g.tempY(g.axis.hi) + 6) >= 12 && g.tempY(g.axis.lo) - 6 - zeroY >= 12) scaleLabel(ctx, '0°', rx + 5, zeroY, 'left', ZERO_COLOR)
 
   // Précipitations : un trait par mm (le zéro est la ligne de base), maximum de l'axe, et l'équivalent en cm s'il y a de la neige.
   const scaleTop = g.baseline - g.maxBarH
